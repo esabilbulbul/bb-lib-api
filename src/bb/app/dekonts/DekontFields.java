@@ -19,5 +19,7 @@ public class DekontFields
     public String Time = "";
     public String Balance = "";
     public String TraceNo = "";
-    public String MonthNo = "";    
+    public String MonthNo = "";   
+    
+    public boolean bSkip;//only for kuveyt
 }

@@ -6,6 +6,7 @@
 package bb.app.dekonts;
 
 import java.io.File;
+import java.util.ArrayList;
 import jaxesa.util.Util;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -19,15 +20,18 @@ public final class DekontMethods
 {
     public static final int BANK_CODE_YKB    = 0;
     public static final int BANK_CODE_ISBANK = 1;
+    public static final int BANK_CODE_KUVEYT = 2;
 
     /**
      * This app reads receipts (dekont) from the file and generates / output a excel decont file
      * 
      * @param args the command line arguments
      */
-    public static boolean processFile(String psInFilePath, String psOutFilePath)
+    public static ArrayList<DekontFields> processFile(String psInFilePath, String psOutFilePath, boolean bSkipFile)
     {
         // TODO code application logic here
+        ArrayList<DekontFields> AllRecords = new ArrayList<DekontFields>();
+        
         try
         {
             System.out.println("Working Directory = " + System.getProperty("user.dir"));
@@ -62,8 +66,9 @@ public final class DekontMethods
             DekontStructure CurDefs = new DekontStructure();
 
             //YKB DEKONT FORMAT/DEFINITIONS
-            //------------------------------------------------------------------            
+            //------------------------------------------------------------------
             DekontStructure YKBDefs = new DekontStructure();
+            YKBDefs.BankCode        = BANK_CODE_YKB;
             YKBDefs.TMP_LBL_END     = "YAPI VE KREDİ BANKASI A.Ş";
             YKBDefs.TMP_LBL_START   = "İşlem Tutarı";
             YKBDefs.DATA_TXNTYPE_SALE             = "PEŞİNSATIŞ";
@@ -75,7 +80,8 @@ public final class DekontMethods
             //ISBANK DEKONT FORMAT/DEFINITIONS
             //------------------------------------------------------------------
             DekontStructure IsbankDefs = new DekontStructure();
-            IsbankDefs.TMP_LBL_END     = "Sayfa ";
+            IsbankDefs.BankCode        = BANK_CODE_ISBANK;
+            IsbankDefs.TMP_LBL_END     = "Ticaret Sicil No";
             IsbankDefs.TMP_LBL_START   = "Bakiyesi İşlem İşlem Tipi Açıklama";
             IsbankDefs.DATA_TXNTYPE_SALE             = "NET SATIŞ TUTAR";
             IsbankDefs.DATA_TXNTYPE_INSTALLMENT      = "";
@@ -83,7 +89,19 @@ public final class DekontMethods
             IsbankDefs.DATA_TXNTYPE_COMM_INSTALLMENT = "";
             IsbankDefs.DATA_TXNTYPE_EFT              = "EFT";
 
-            CurDefs = IsbankDefs;
+            //KUVEYT DEKONT FORMAT/DEFINITIONS
+            //------------------------------------------------------------------
+            DekontStructure KuveytDefs = new DekontStructure();
+            KuveytDefs.BankCode        = BANK_CODE_KUVEYT;
+            KuveytDefs.TMP_LBL_END     = "Ticaret Sicil No ";
+            KuveytDefs.TMP_LBL_START   = "Referans Kodu Tutar Bakiye";
+            KuveytDefs.DATA_TXNTYPE_SALE             = "A0";
+            KuveytDefs.DATA_TXNTYPE_INSTALLMENT      = "";
+            KuveytDefs.DATA_TXNTYPE_COMM_SALE        = "";
+            KuveytDefs.DATA_TXNTYPE_COMM_INSTALLMENT = "";
+            KuveytDefs.DATA_TXNTYPE_EFT              = "";
+            
+            CurDefs = KuveytDefs;
             // REFORMATTING LINE
             //------------------------------------------------------------------
             // - Title Words (YKB)
@@ -117,7 +135,7 @@ public final class DekontMethods
             boolean bDataStarted = false;
             for (String lineN: Lines)
             {
-                
+    
                 //int index = lineN.indexOf( "YAPI VE KREDİ BANKASI A.Ş");
                 int index = lineN.indexOf(CurDefs.TMP_LBL_END);
                 if (index ==0)
@@ -142,7 +160,8 @@ public final class DekontMethods
                         //lineN = sTxnType + "\t" + lineN;
                         String sNewLine = "";
                         DekontFields fields = new DekontFields();
-                        fields = parseDataLine(BANK_CODE_ISBANK, sTxnType, lineN);
+                        fields = parseDataLine(BANK_CODE_KUVEYT, sTxnType, lineN);
+                        //fields = parseDataLine(BANK_CODE_ISBANK, sTxnType, lineN);
                         sNewLine = generateNewFormattedLine(fields);
                         //sNewLine = parseYKBDataLine(sTxnType, lineN);
 
@@ -150,7 +169,12 @@ public final class DekontMethods
                         System.out.println(sNewLine);
 
                         //if (bNoFilter==false)
-                            Util.Files.Write2File(sPathFormattedFile, sNewLine);
+                        if (fields.bSkip==false)
+                        {
+                            AllRecords.add(fields);
+                            if (bSkipFile==false)
+                                Util.Files.Write2File(sPathFormattedFile, sNewLine);
+                        }
                         //else
                             
                         
@@ -158,11 +182,14 @@ public final class DekontMethods
                 }
                 
                 if (bNoFilter==true)
-                    Util.Files.Write2File(sPathFormattedFile, lineN);//no filter - write full data
-
+                {
+                    if (bSkipFile==false)
+                        Util.Files.Write2File(sPathFormattedFile, lineN);//no filter - write full data
+                }
+                
                 //index = lineN.indexOf( "İşlem Tutarı");
                 index = lineN.indexOf( CurDefs.TMP_LBL_START );
-                if (index == 0)
+                if ((index == 0) || ((CurDefs.BankCode==BANK_CODE_KUVEYT) && (lineN.trim().length()==0)))
                 {
                     bDataStarted = true;
                 }
@@ -182,12 +209,12 @@ public final class DekontMethods
             }
             document.close();
             */
-            return true;
+            return AllRecords;
         }
         catch(Exception e)
         {
             System.out.println(e.getMessage());
-            return false;
+            return null;
         }
     }
     
@@ -265,6 +292,12 @@ public final class DekontMethods
             case BANK_CODE_ISBANK:
 
                 return parseIsbankDataLine(psTxnType, pDataLine);
+                
+            case BANK_CODE_KUVEYT:
+                
+                return parseKuveytDataLine(psTxnType, pDataLine);
+                
+                
         }
 
         return new DekontFields();
@@ -273,7 +306,98 @@ public final class DekontMethods
     /*
         Warning:
 
-        Read order from pdf file
+        Read order from pdf file (record)
+         - date time
+         - txn type
+         - desc (conditional)
+         - amount
+         - balance
+    */
+    public static DekontFields parseKuveytDataLine(String psTxnType, String pDataLine)
+    {
+        DekontFields fields = new DekontFields();
+        fields.TxnType = psTxnType;
+
+        String[] sCols  = pDataLine.split(" ");
+
+        for(int i=0;i<sCols.length;i++)
+        {
+            String sColData = sCols[i];
+            switch(i)
+            {
+                case 0://date time
+                    
+                    String[] sDateTime = sColData.split("-");
+                    fields.Date = sDateTime[0];
+                    //fields.Time = sDateTime[1];
+                    
+                    String[] sDateParts = fields.Date.split("\\.");
+
+                    //sColMonthNo = sDateParts[1];
+                    fields.MonthNo = sDateParts[1];
+                    
+                    break;
+                case 1:
+                    
+                    //txn type
+                    
+                    break;
+                case 2:
+                    
+                    boolean rc = Util.Str.isAmount(sColData);
+                    if (rc==false)//if desc interveneted skip until the amount
+                    {
+                        for(int j=0;j<100;j++)
+                        {
+                            sColData = sCols[i++];
+                            rc = Util.Str.isAmount(sColData);
+                            if (rc==true)
+                                break;
+                        }
+                    }
+                    /*
+                    boolean rc = Util.Str.isAmount(sColData);
+                    if (rc==false)
+                    {
+                        i+=2;
+                        sColData = sCols[i];
+                        
+                    }
+                    */
+                    
+                    if (sColData.trim().substring(0, 1).equals("-")==true)
+                        fields.bSkip = true;
+                    
+                    //Amount (format should be changed commas to dot, dot to comma) otherwise excel doesn't understand
+                    fields.Amount = sColData;
+
+                    /*
+                    fields.Amount = fields.Amount.replace(",", "#");
+                    fields.Amount = fields.Amount.replace(".", "&");
+
+                    fields.Amount = fields.Amount.replace("#", ".");
+                    fields.Amount = fields.Amount.replace("&", ",");
+                    */
+                    
+                    break;
+                case 3:
+                    
+                    //balance
+                    fields.Balance = sColData;
+                    
+                    break;
+                
+            }
+        }
+            
+        return fields;
+
+    }
+    
+    /*
+        Warning:
+
+        Read order from pdf file (record)
          - date time
          - channel
          - amount
