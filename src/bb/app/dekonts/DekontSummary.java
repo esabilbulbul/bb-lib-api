@@ -13,12 +13,13 @@ import java.util.ArrayList;
  */
 public class DekontSummary
 {
+    public String LastReportName;
     public ArrayList<MonthSummary> MonthsLastReport;
     public ArrayList<MonthSummary> MonthsAllReports;
 
-
     public DekontSummary()
     {
+        LastReportName   = "";
         MonthsLastReport = new ArrayList<MonthSummary>();
         MonthsAllReports = new ArrayList<MonthSummary>();
     }
