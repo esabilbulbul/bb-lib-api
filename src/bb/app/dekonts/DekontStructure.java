@@ -22,5 +22,21 @@ public class DekontStructure
     public String DATA_TXNTYPE_COMM_INSTALLMENT;//Taksitli Komisyon
     
     public String DATA_TXNTYPE_EFT;
+    public String DATA_TXNTYPE_ACCOUNT;//Debit (deduct) / Credit (add)
+    public String DATA_TXNTYPE_ACCOUNT2;//Debit (deduct) / Credit (add)
+    
 
+    public DekontStructure()
+    {
+        TMP_LBL_START = "";
+        TMP_LBL_END   = "";
+        DATA_TXNTYPE_SALE = "";
+        DATA_TXNTYPE_INSTALLMENT = "";
+        DATA_TXNTYPE_COMM_SALE = "";
+        DATA_TXNTYPE_COMM_INSTALLMENT = "";
+        DATA_TXNTYPE_EFT = "";
+        DATA_TXNTYPE_ACCOUNT = "";
+        DATA_TXNTYPE_ACCOUNT2 = "";
+        
+    }
 }

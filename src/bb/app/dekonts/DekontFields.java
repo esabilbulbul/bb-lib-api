@@ -11,6 +11,7 @@ package bb.app.dekonts;
  */
 public class DekontFields 
 {
+    public String bankCode;
     public String TxnType;
     public String Date = "";
     public String Release = "";
@@ -18,8 +19,10 @@ public class DekontFields
     public String Amount = "";
     public String Time = "";
     public String Balance = "";
-    public String TraceNo = "";
-    public String MonthNo = "";   
+    public String TraceNo = "";//REFCODE SAME THING
+    public String refNo="";//only used for kuveyt
+    public String MonthNo = "";
+    
     
     public boolean bSkip;//only for kuveyt
 }
