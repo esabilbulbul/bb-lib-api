@@ -9,20 +9,46 @@ import java.util.ArrayList;
 
 /**
  *
- * @author Administrator
+ * @author esabil
  */
 public class DekontSummary
 {
-    public String LastReportName;
-    public ArrayList<MonthSummary> MonthsLastReport;
-    public ArrayList<MonthSummary> MonthsAllReports;
+    public ArrayList<DekontSummaryTots>           banks    = new ArrayList<DekontSummaryTots>();
+    public ArrayList<DekontSummaryRec>            rows     = new ArrayList<DekontSummaryRec>();
+    public ArrayList<DekontSummaryYear>           years    = new ArrayList<DekontSummaryYear>();
 
-    public DekontSummary()
-    {
-        LastReportName   = "";
-        MonthsLastReport = new ArrayList<MonthSummary>();
-        MonthsAllReports = new ArrayList<MonthSummary>();
-    }
+    // Quarter Days & Weeks
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontSummaryQuarterDay>     Qdays     = new ArrayList<DekontSummaryQuarterDay>();
+    public ArrayList<DekontSummaryQuarterWeek>   Qweeks    = new ArrayList<DekontSummaryQuarterWeek>();
+
+    // All Weeks  (52 Weeks)
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontSummaryWeek>            weeks   = new ArrayList<DekontSummaryWeek>();
+
+    // Current Year
+    //-------------------------------------------------------------------------------
+    public DekontSummaryThisYear                current  = new DekontSummaryThisYear();//Current Year
+
+    // Overall (years)
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontSummaryYear> overall = new ArrayList<DekontSummaryYear>();//years
+    
+    public DekontSummaryUseRates useRates = new DekontSummaryUseRates();
+    
+    //Current Month
+    //-------------------------------------------------------------------------------
+    public DekontSummaryMonth currentMonth = new DekontSummaryMonth();
+    
+    // Target Month Weeks
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontSummaryWeek>            MonthNweeks   = new ArrayList<DekontSummaryWeek>();
+
+    // Target Month Weeks
+    //-------------------------------------------------------------------------------
+    
+    
+    public String baseYear = "";
+    
+    public String targetMonth = "";
 }
-
-
