@@ -17,6 +17,8 @@ import org.apache.pdfbox.text.PDFTextStripperByArea;
 /**
  *
  * @author esabil
+ * 
+ * commit after battery replacement dec 5 2019
  */
 public final class DekontMethods 
 {
