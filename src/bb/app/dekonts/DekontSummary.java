@@ -28,7 +28,8 @@ public class DekontSummary
 
     // Current Year
     //-------------------------------------------------------------------------------
-    public DekontSummaryThisYear                current  = new DekontSummaryThisYear();//Current Year
+    public DekontSummaryYearN                thisYear   = new DekontSummaryYearN();//Current Year
+    public DekontSummaryYearN                lastYear   = new DekontSummaryYearN();//Current Year
 
     // Overall (years)
     //-------------------------------------------------------------------------------
@@ -48,7 +49,8 @@ public class DekontSummary
     //-------------------------------------------------------------------------------
     
     
-    public String baseYear = "";
+    public String baseYearDate = "";
+    public String lastYearDate = "";
     
     public String targetMonth = "";
 }

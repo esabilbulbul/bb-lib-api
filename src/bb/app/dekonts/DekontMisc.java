@@ -19,6 +19,8 @@ import jaxesa.util.Util;
  */
 public final class DekontMisc 
 {
+    //public static SsMr
+
     //Date format should be 2019-08-23 
     //inDate = DDMMYYYY
     public static String formatDate(String psDate)
@@ -63,24 +65,89 @@ public final class DekontMisc
         return sMonthNo;
     }
 
-    public static DekontSummary calculateSummary(EntityManager pem, int pBankCode, int pYear, int pMonth)
+    public static DekontSummary calculateSummary(EntityManager pem, 
+                                                 String pBaseCurrency, 
+                                                 String pTargetCurrency, 
+                                                 int pBankCode, 
+                                                 int pYear, 
+                                                 int pMonth)
     {
         DekontSummary summary = new DekontSummary();
+
+        try
+        {
+
+            summary.baseYearDate = Util.DateTime.GetDateTime_s().substring(0,4);
+            summary.lastYearDate = Integer.toString(Integer.parseInt(summary.baseYearDate) - 1);
+
+            summary.targetMonth = Util.DateTime.GetDateTime_s().substring(4,6);
+
+            // Overall/Avg Summary regardless of the year
+            summary.rows  = calculateSummaryRecords(pem, pBaseCurrency, pTargetCurrency, pBankCode, pYear, pMonth);
+            summary.banks = calculateSummaryBankSubtotals(pem, pBaseCurrency, pTargetCurrency, summary.baseYearDate, -1);
+            summary.overall =  calculateSummaryOverall(pem, pBaseCurrency, pTargetCurrency);
+            summary.years = calculateSummaryYears(pem, pBaseCurrency, pTargetCurrency, summary.baseYearDate);//ay bazinda yillik performans
+            
+
+            // Avg + Year (now) + Year (past) summary
+            //------------------------------------------------------------------
+            summary.Qdays          = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency, "-1");//Genel/Avg - Gun Ciro Ortalamasi
+            summary.thisYear.Qdays = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Gun Ciro Ortalamasi
+            summary.lastYear.Qdays = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Gun Ciro Ortalamasi
+
+            //Mevsimlik Performanslar
+            //------------------------------------------------------------------
+            summary.Qweeks           =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,"-1");////Genel/Avg - Week Ciro Ortalamasi
+            summary.thisYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Week Ciro Ortalamasi
+            summary.lastYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Week Ciro Ortalamasi
+
+            summary.weeks          = calculateSummaryWeeks(pem, pBaseCurrency, pTargetCurrency, "-1", "-1");//Hafta Bazinda Yillik Performans
+            //summary.thisYear.weeks = calculateSummaryWeeks(pem, summary.baseYearDate, "-1");//ignored
+            //summary.lastYear.weeks = calculateSummaryWeeks(pem, summary.lastYearDate, "-1");//ignored
+
+            //Aylik Performanslar
+            //------------------------------------------------------------------
+            summary.currentMonth.days = calculateSummaryDays(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Gun bazinda Aylik Performans
+            summary.currentMonth.weeks = calculateSummaryWeeksOfMonth(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Haftalik Aylik Performans
+            summary.currentMonth.dayAvgs = calculateSummaryTargetMonthDayAverages(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);
+            
+            summary.useRates = calculateSummaryUseRates(pem, pBaseCurrency, pTargetCurrency);
+
+            return summary;
+        }
+        catch(Exception e)
+        {
+            return summary;
+        }
+    }
+
+    public static ArrayList<DekontSummaryRec> calculateSummaryRecords(  EntityManager pem, 
+                                                                        String pBaseCurrency, 
+                                                                        String pTargetCurrency, 
+                                                                        int pBankCode, 
+                                                                        int pYear, 
+                                                                        int pMonth)
+    {
+        ArrayList<DekontSummaryRec> SumRows = new ArrayList<DekontSummaryRec>();
         
         try
         {
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY");
 
-            SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class         , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_MRC_ID"          , Long.class         , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"   , String.class      , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY" , String.class      , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BNK_CODE"  , Integer.class      , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_YEAR"      , Integer.class      , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_MONTH_NO"  , Integer.class      , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pBankCode      , "P_BNK_CODE");
-            SP.SetParameter(Colindex++, pYear          , "P_YEAR");
-            SP.SetParameter(Colindex++, pMonth         , "P_MONTH_NO");
+            SP.SetParameter(Colindex++, -1                 , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency      , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency    , "P_TARGET_CURRENCY");
+            SP.SetParameter(Colindex++, pBankCode          , "P_BNK_CODE");
+            SP.SetParameter(Colindex++, pYear              , "P_YEAR");
+            SP.SetParameter(Colindex++, pMonth             , "P_MONTH_NO");
 
             SP.execute();
 
@@ -91,8 +158,6 @@ public final class DekontMisc
             String sCnt  = "";
             String sMonthName = "";
             String sYear = "";
-
-            ArrayList<DekontSummaryRec> SumRows = new ArrayList<DekontSummaryRec>();
 
             for (List<RowColumn> RowN:rs)
             {
@@ -114,41 +179,18 @@ public final class DekontMisc
                 
                 SumRows.add(newSum);
             }
-
-            summary.baseYear = Util.DateTime.GetDateTime_s().substring(0,4);
-
-            summary.targetMonth = Util.DateTime.GetDateTime_s().substring(4,6);
-
-            summary.rows  = SumRows;
-            summary.banks = calculateSummaryBankSubtotals(pem, summary.baseYear, -1);
-            summary.years = calculateSummaryYears(pem, summary.baseYear);
-
-            summary.Qdays = calculateSummaryQuarterDays(pem, "-1");//ALL
-            summary.current.Qdays = calculateSummaryQuarterDays(pem, summary.baseYear);
-
-            summary.Qweeks          =  calculateSummaryQuarterWeeks(pem, "-1");//ALL
-            summary.current.Qweeks  =  calculateSummaryQuarterWeeks(pem, summary.baseYear);
-
-            summary.weeks         = calculateSummaryWeeks(pem, "-1", "-1");
-            summary.current.weeks = calculateSummaryWeeks(pem, summary.baseYear, "-1");
-
-            summary.currentMonth.days = calculateSummaryDays(pem, "-1", summary.targetMonth);
-
-            summary.currentMonth.weeks = calculateSummaryWeeksOfMonth(pem, "-1", summary.targetMonth);
-
-            summary.overall =  calculateSummaryOverall(pem);
-
-            summary.useRates = calculateSummaryUseRates(pem);
-
-            return summary;
+            
+            return SumRows;
         }
         catch(Exception e)
         {
-            return summary;
+            return SumRows;
         }
     }
 
-    public static DekontSummaryUseRates calculateSummaryUseRates(EntityManager pem)
+    public static DekontSummaryUseRates calculateSummaryUseRates(EntityManager pem, 
+                                                                 String pBaseCurrency, 
+                                                                 String pTargetCurrency)
     {
         DekontSummaryUseRates rates = new DekontSummaryUseRates();
 
@@ -157,9 +199,13 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_USE_RATES");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
             SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
 
             SP.execute();
 
@@ -184,18 +230,24 @@ public final class DekontMisc
         }
     }
 
-    public static ArrayList<DekontSummaryYear> calculateSummaryOverall(EntityManager pem)
+    public static ArrayList<DekontSummaryYear> calculateSummaryOverall( EntityManager pem, 
+                                                                        String pBaseCurrency, 
+                                                                        String pTargetCurrency)
     {
         ArrayList<DekontSummaryYear> overall = new ArrayList<DekontSummaryYear>();
-        
+
         try
         {
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_OVERALL");
 
-            SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_MRC_ID"           , Long.class       , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_FROM_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TO_CURRENCY"  , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_FROM_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TO_CURRENCY");
 
             SP.execute();
 
@@ -219,8 +271,12 @@ public final class DekontMisc
             return overall;
         }
     }
-    
-    public static ArrayList<DekontSummaryTots> calculateSummaryBankSubtotals(EntityManager pem,String pBaseYear, int pMonth)
+
+    public static ArrayList<DekontSummaryTots> calculateSummaryBankSubtotals(EntityManager pem,
+                                                                             String pBaseCurrency, 
+                                                                             String pTargetCurrency, 
+                                                                             String pBaseYear, 
+                                                                             int pMonth)
     {
         ArrayList<DekontSummaryTots> bankCodes = new ArrayList<DekontSummaryTots>();
 
@@ -228,14 +284,18 @@ public final class DekontMisc
         {
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_BY_BANK");
 
-            SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_MRC_ID"           , Long.class       , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR" , String.class   , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_MONTH"     , String.class  , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
-            SP.SetParameter(Colindex++, pMonth         , "P_MONTH");
+            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
+            SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
+            SP.SetParameter(Colindex++, pMonth          , "P_MONTH");
 
             SP.execute();
 
@@ -263,7 +323,10 @@ public final class DekontMisc
 
     }
 
-    public static ArrayList<DekontSummaryYear> calculateSummaryYears(EntityManager pem,String pBaseYear)
+    public static ArrayList<DekontSummaryYear> calculateSummaryYears(EntityManager pem,
+                                                                     String pBaseCurrency, 
+                                                                     String pTargetCurrency, 
+                                                                     String pBaseYear)
     {
         ArrayList<DekontSummaryYear> years = new ArrayList<DekontSummaryYear>(); 
 
@@ -271,12 +334,16 @@ public final class DekontMisc
         {
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_BY_YEARS");
 
-            SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_BASE_YEAR" , String.class   , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_MRC_ID"           , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_YEAR"        , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
+            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
+            SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
 
             SP.execute();
 
@@ -303,7 +370,10 @@ public final class DekontMisc
         }
     }
 
-    public static ArrayList<DekontSummaryQuarterDay> calculateSummaryQuarterDays(EntityManager pem,String pBaseYear)
+    public static ArrayList<DekontSummaryQuarterDay> calculateSummaryQuarterDays(EntityManager pem, 
+                                                                                 String pBaseCurrency, 
+                                                                                 String pTargetCurrency, 
+                                                                                 String pBaseYear)
     {
         ArrayList<DekontSummaryQuarterDay> quarters = new ArrayList<DekontSummaryQuarterDay>();
 
@@ -311,12 +381,16 @@ public final class DekontMisc
         {
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_DAYS_BY_QUARTER");
 
-            SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_BASE_YEAR" , String.class   , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_MRC_ID"           , Long.class       , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_YEAR"        , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
+            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
+            SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
 
             SP.execute();
 
@@ -344,7 +418,10 @@ public final class DekontMisc
         }
     }
 
-    public static ArrayList<DekontSummaryQuarterWeek> calculateSummaryQuarterWeeks(EntityManager pem,String pBaseYear)
+    public static ArrayList<DekontSummaryQuarterWeek> calculateSummaryQuarterWeeks(EntityManager pem, 
+                                                                                   String pBaseCurrency, 
+                                                                                   String pTargetCurrency, 
+                                                                                   String pBaseYear)
     {
         ArrayList<DekontSummaryQuarterWeek> quarters = new ArrayList<DekontSummaryQuarterWeek>();
 
@@ -353,11 +430,15 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_WEEKS_BY_QUARTER");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"    , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
+            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
+            SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
 
             SP.execute();
 
@@ -385,7 +466,11 @@ public final class DekontMisc
         }
     }
 
-    public static ArrayList<DekontSummaryDay> calculateSummaryTargetMonthDayAverages(EntityManager pem, String pBaseYear, String pBaseMonth)
+    public static ArrayList<DekontSummaryDay> calculateSummaryTargetMonthDayAverages(EntityManager pem, 
+                                                                                     String pBaseCurrency, 
+                                                                                     String pTargetCurrency, 
+                                                                                     String pBaseYear, 
+                                                                                     String pBaseMonth)
     {
         ArrayList<DekontSummaryDay> days = new ArrayList<DekontSummaryDay>();
 
@@ -394,11 +479,15 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_MONTH_DAYS_AVG");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"     , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR"  , String.class   , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
             SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
             SP.SetParameter(Colindex++, pBaseMonth     , "P_BASE_MONTH");
 
@@ -426,7 +515,11 @@ public final class DekontMisc
         }
     }
     
-    public static ArrayList<DekontSummaryDay> calculateSummaryDays(EntityManager pem,String pBaseYear, String pBaseMonth)
+    public static ArrayList<DekontSummaryDay> calculateSummaryDays(EntityManager pem, 
+                                                                   String pBaseCurrency, 
+                                                                   String pTargetCurrency, 
+                                                                   String pBaseYear, 
+                                                                   String pBaseMonth)
     {
         ArrayList<DekontSummaryDay> days = new ArrayList<DekontSummaryDay>();
 
@@ -435,11 +528,15 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_DAYS");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"     , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR"  , String.class   , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
             SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
             SP.SetParameter(Colindex++, pBaseMonth     , "P_BASE_MONTH");
 
@@ -465,8 +562,12 @@ public final class DekontMisc
             return days;
         }
     }
-    
-    public static ArrayList<DekontSummaryWeek> calculateSummaryWeeks(EntityManager pem,String pBaseYear, String pBaseMonth)
+
+    public static ArrayList<DekontSummaryWeek> calculateSummaryWeeks(EntityManager pem,
+                                                                     String pBaseCurrency, 
+                                                                     String pTargetCurrency,
+                                                                     String pBaseYear, 
+                                                                     String pBaseMonth)
     {
         ArrayList<DekontSummaryWeek> quarters = new ArrayList<DekontSummaryWeek>();
 
@@ -475,11 +576,15 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_WEEKS");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"     , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR"  , String.class   , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
             SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
             SP.SetParameter(Colindex++, pBaseMonth     , "P_BASE_MONTH");
 
@@ -506,8 +611,11 @@ public final class DekontMisc
         }
     }
 
-    
-    public static ArrayList<DekontSummaryWeek> calculateSummaryWeeksOfMonth(EntityManager pem,String pBaseYear, String pBaseMonth)
+    public static ArrayList<DekontSummaryWeek> calculateSummaryWeeksOfMonth(EntityManager pem,
+                                                                            String pBaseCurrency, 
+                                                                            String pTargetCurrency, 
+                                                                            String pBaseYear, 
+                                                                            String pBaseMonth)
     {
         ArrayList<DekontSummaryWeek> quarters = new ArrayList<DekontSummaryWeek>();
 
@@ -516,11 +624,15 @@ public final class DekontMisc
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_BB_MRC_CALC_SUMMARY_WEEKS_OF_MONTH");
 
             SP.registerStoredProcedureParameter("P_MRC_ID"     , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_BASE_CURRENCY"    , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_YEAR"  , String.class   , ParameterMode.IN);
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
             SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
+            SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
             SP.SetParameter(Colindex++, pBaseMonth     , "P_BASE_MONTH");
 

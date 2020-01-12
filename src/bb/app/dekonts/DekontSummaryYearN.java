@@ -11,10 +11,10 @@ import java.util.ArrayList;
  *
  * @author esabil
  */
-public class DekontSummaryThisYear 
+public class DekontSummaryYearN 
 {
     public ArrayList<DekontSummaryQuarterDay>   Qdays  = new ArrayList<DekontSummaryQuarterDay>();
     public ArrayList<DekontSummaryQuarterWeek>  Qweeks = new ArrayList<DekontSummaryQuarterWeek>();
-    
+
     public ArrayList<DekontSummaryWeek>            weeks   = new ArrayList<DekontSummaryWeek>();//ALL WEEKS 52 weeks
 }
