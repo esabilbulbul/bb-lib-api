@@ -13,12 +13,17 @@ import java.util.ArrayList;
  */
 public class ssoPageParams 
 {
+    public String CountryCodeDefault;
     public ArrayList<ssoCountryCodes> CountryCodes;
-    public ArrayList<ssoCityCode> Cities;
+    public ArrayList<ssoCityCode> Cities;//multiple cities will be sent
+    public ArrayList<ssoMCC> MCCs;
 
     public ssoPageParams()
     {
+        CountryCodeDefault = "";
         CountryCodes = new ArrayList<ssoCountryCodes>();
+        MCCs = new ArrayList<ssoMCC>();
+
         Cities = new ArrayList<ssoCityCode>();
     }
 }
