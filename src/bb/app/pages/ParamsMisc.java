@@ -15,7 +15,7 @@ import jaxesa.persistence.StoredProcedureQuery;
 import jaxesa.persistence.annotations.ParameterMode;
 import jaxesa.persistence.misc.RowColumn;
 import jaxesa.util.Util;
-import jaxesa.webapi.sso_APIResponse;
+import jaxesa.webapi.ssoAPIResponse;
 
 /**
  *
@@ -132,7 +132,7 @@ public final class ParamsMisc
     {
         try
         {
-            sso_APIResponse Rsp = new sso_APIResponse();
+            ssoAPIResponse Rsp = new ssoAPIResponse();
             
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_PRM_GET_COUNTIES");
 
@@ -172,7 +172,7 @@ public final class ParamsMisc
     {
         try
         {
-            sso_APIResponse Rsp = new sso_APIResponse();
+            ssoAPIResponse Rsp = new ssoAPIResponse();
             
             StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_PRM_GET_POSTCODES");
 
