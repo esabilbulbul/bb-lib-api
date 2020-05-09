@@ -11,6 +11,8 @@ package bb.app.pages;
  */
 public class ssoMerchantPreferences 
 {
+    public long Id;//Account Id - User
+    public long version;
     public String MerchantName;
     public String CurrencyCode;
     public String CurrencyName;
@@ -25,6 +27,8 @@ public class ssoMerchantPreferences
     
     public ssoMerchantPreferences()
     {
+        Id = -1;
+        version = -1;
         MerchantName = "";
         CurrencyCode = "";
         CurrencyName = "";

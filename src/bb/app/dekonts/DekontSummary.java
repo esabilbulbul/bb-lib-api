@@ -13,6 +13,8 @@ import java.util.ArrayList;
  */
 public class DekontSummary
 {
+    public String currency = "";
+
     public ArrayList<DekontSummaryTots>           banks    = new ArrayList<DekontSummaryTots>();
     public ArrayList<DekontSummaryRec>            rows     = new ArrayList<DekontSummaryRec>();
     public ArrayList<DekontSummaryYear>           years    = new ArrayList<DekontSummaryYear>();
@@ -48,6 +50,16 @@ public class DekontSummary
     // Target Month Weeks
     //-------------------------------------------------------------------------------
     
+    // Earning Stats
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontEarningStats> earnings = new ArrayList<DekontEarningStats>();
+    
+    // Quantity Stats
+    //-------------------------------------------------------------------------------
+    public ArrayList<DekontQuantityStats> quantities = new ArrayList<DekontQuantityStats>();
+    
+    //Stats Subtotals
+    public DekontSummaryStats dashboard = new DekontSummaryStats();
     
     public String baseYearDate = "";
     public String lastYearDate = "";

@@ -5,9 +5,19 @@
  */
 package bb.app.dekonts;
 
+import entity.mrc.SsMrcEarnings;
+import entity.mrc.SsMrcStatsEarnings;
+import entity.mrc.SsMrcStatsQuantity;
+import entity.user.SsUsrAccounts;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
+import jaxesa.log.LogManager;
 import jaxesa.persistence.EntityManager;
+import jaxesa.persistence.Query;
 import jaxesa.persistence.StoredProcedureQuery;
 import jaxesa.persistence.annotations.ParameterMode;
 import jaxesa.persistence.misc.RowColumn;
@@ -66,6 +76,8 @@ public final class DekontMisc
     }
 
     public static DekontSummary calculateSummary(EntityManager pem, 
+                                                 long pAccountId, //merchant Id
+                                                 String pMerchantName,
                                                  String pBaseCurrency, 
                                                  String pTargetCurrency, 
                                                  int pBankCode, 
@@ -76,42 +88,119 @@ public final class DekontMisc
 
         try
         {
-
+            summary.currency = pBaseCurrency;
             summary.baseYearDate = Util.DateTime.GetDateTime_s().substring(0,4);
             summary.lastYearDate = Integer.toString(Integer.parseInt(summary.baseYearDate) - 1);
 
             summary.targetMonth = Util.DateTime.GetDateTime_s().substring(4,6);
 
             // Overall/Avg Summary regardless of the year
-            summary.rows  = calculateSummaryRecords(pem, pBaseCurrency, pTargetCurrency, pBankCode, pYear, pMonth);
-            summary.banks = calculateSummaryBankSubtotals(pem, pBaseCurrency, pTargetCurrency, summary.baseYearDate, -1);
-            summary.overall =  calculateSummaryOverall(pem, pBaseCurrency, pTargetCurrency);
-            summary.years = calculateSummaryYears(pem, pBaseCurrency, pTargetCurrency, summary.baseYearDate);//ay bazinda yillik performans
+            summary.rows  = calculateSummaryRecords(pem, pAccountId, pBaseCurrency, pTargetCurrency, pBankCode, pYear, pMonth);
+            summary.banks = calculateSummaryBankSubtotals(pem, pAccountId, pBaseCurrency, pTargetCurrency, summary.baseYearDate, -1);
+            summary.overall =  calculateSummaryOverall(pem, pAccountId, pBaseCurrency, pTargetCurrency);
+            summary.years = calculateSummaryYears(pem, pAccountId, pBaseCurrency, pTargetCurrency, summary.baseYearDate);//ay bazinda yillik performans
             
 
             // Avg + Year (now) + Year (past) summary
             //------------------------------------------------------------------
-            summary.Qdays          = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency, "-1");//Genel/Avg - Gun Ciro Ortalamasi
-            summary.thisYear.Qdays = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Gun Ciro Ortalamasi
-            summary.lastYear.Qdays = calculateSummaryQuarterDays(pem, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Gun Ciro Ortalamasi
+            summary.Qdays          = calculateSummaryQuarterDays(pem, pAccountId, pBaseCurrency, pTargetCurrency, "-1");//Genel/Avg - Gun Ciro Ortalamasi
+            summary.thisYear.Qdays = calculateSummaryQuarterDays(pem, pAccountId, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Gun Ciro Ortalamasi
+            summary.lastYear.Qdays = calculateSummaryQuarterDays(pem, pAccountId, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Gun Ciro Ortalamasi
 
             //Mevsimlik Performanslar
             //------------------------------------------------------------------
-            summary.Qweeks           =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,"-1");////Genel/Avg - Week Ciro Ortalamasi
-            summary.thisYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Week Ciro Ortalamasi
-            summary.lastYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Week Ciro Ortalamasi
+            summary.Qweeks           =  calculateSummaryQuarterWeeks(pem, pAccountId, pBaseCurrency, pTargetCurrency,"-1");////Genel/Avg - Week Ciro Ortalamasi
+            summary.thisYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pAccountId, pBaseCurrency, pTargetCurrency,summary.baseYearDate);// Mevsimlik - <This Year> -  Week Ciro Ortalamasi
+            summary.lastYear.Qweeks  =  calculateSummaryQuarterWeeks(pem, pAccountId, pBaseCurrency, pTargetCurrency,summary.lastYearDate);// Mevsimlik - <Last Year> -  Week Ciro Ortalamasi
 
-            summary.weeks          = calculateSummaryWeeks(pem, pBaseCurrency, pTargetCurrency, "-1", "-1");//Hafta Bazinda Yillik Performans
+            summary.weeks          = calculateSummaryWeeks(pem, pAccountId, pBaseCurrency, pTargetCurrency, "-1", "-1");//Hafta Bazinda Yillik Performans
             //summary.thisYear.weeks = calculateSummaryWeeks(pem, summary.baseYearDate, "-1");//ignored
             //summary.lastYear.weeks = calculateSummaryWeeks(pem, summary.lastYearDate, "-1");//ignored
 
             //Aylik Performanslar
             //------------------------------------------------------------------
-            summary.currentMonth.days = calculateSummaryDays(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Gun bazinda Aylik Performans
-            summary.currentMonth.weeks = calculateSummaryWeeksOfMonth(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Haftalik Aylik Performans
-            summary.currentMonth.dayAvgs = calculateSummaryTargetMonthDayAverages(pem, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);
+            summary.currentMonth.days = calculateSummaryDays(pem, pAccountId, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Gun bazinda Aylik Performans
+            summary.currentMonth.weeks = calculateSummaryWeeksOfMonth(pem, pAccountId, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);//Haftalik Aylik Performans
+            summary.currentMonth.dayAvgs = calculateSummaryTargetMonthDayAverages(pem, pAccountId, pBaseCurrency, pTargetCurrency, "-1", summary.targetMonth);
+
+            summary.useRates = calculateSummaryUseRates(pem, pAccountId, pBaseCurrency, pTargetCurrency);
+
+            //earningStats
+            //------------------------------------------------------------------
+            ArrayList<DekontEarningStats> RetailEarningStats = new ArrayList<DekontEarningStats>();
+            ArrayList<DekontEarningStats> AllEarningStats = new ArrayList<DekontEarningStats>();
+            RetailEarningStats = calculateEarningStats(pem, pAccountId);//for test
+            AllEarningStats    = calculateEarningStats(pem, -1);
             
-            summary.useRates = calculateSummaryUseRates(pem, pBaseCurrency, pTargetCurrency);
+            if (RetailEarningStats!=null)
+                summary.earnings.addAll(RetailEarningStats);
+
+            if (AllEarningStats!=null)
+                summary.earnings.addAll(AllEarningStats);
+
+            //QuantityStats
+            //------------------------------------------------------------------
+            ArrayList<DekontQuantityStats> RetailQuantityStats = new ArrayList<DekontQuantityStats>();
+            ArrayList<DekontQuantityStats> AllQuantityStats    = new ArrayList<DekontQuantityStats>();
+            RetailQuantityStats = calculateQuantityStats(pem, pAccountId);//for test
+            AllQuantityStats    = calculateQuantityStats(pem, -1);
+
+            summary.quantities.addAll(RetailQuantityStats);
+            summary.quantities.addAll(AllQuantityStats);
+
+            //Dashboard
+            //------------------------------------------------------------------
+            DecimalFormat df2 = new DecimalFormat("#.##");
+            df2.setRoundingMode(RoundingMode.UP);
+            
+            DecimalFormat df3 = new DecimalFormat("#.###");
+            df3.setRoundingMode(RoundingMode.UP);
+            //Retail YEar Earning
+            DekontEarningStats retailN = new DekontEarningStats();
+            retailN = getLastEarningValue(summary.earnings, pAccountId);
+            //retailN = RetailEarningStats.get(0);
+
+            //RETAIL - YEAR EARNING
+            summary.dashboard.yearearning_mybiz.id = 1;//Retail-YE
+            summary.dashboard.yearearning_mybiz.Title = pMerchantName;
+            summary.dashboard.yearearning_mybiz.Value = retailN.YearEarning;
+            summary.dashboard.yearearning_mybiz.ChangeInValue = df2.format(retailN.diffYearEarning).toString();
+            summary.dashboard.yearearning_mybiz.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYearEarning)).toString();
+            summary.dashboard.yearearning_mybiz.Change2Yesterday = df2.format(Double.parseDouble(retailN.changeYearEarning2Yesterday)).toString();
+            summary.dashboard.yearearning_mybiz.dtime = retailN.dtime;
+
+            //RETAIL - YEAR TO DATE
+            summary.dashboard.ytd.id = 2;//Retail-YTD
+            summary.dashboard.ytd.Title = pMerchantName + " - ytd";
+            summary.dashboard.ytd.Value = retailN.YTDEarning;
+            summary.dashboard.ytd.ChangeInValue = df2.format(retailN.diffYTD);
+            summary.dashboard.ytd.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYTDEarning)).toString();
+            summary.dashboard.ytd.dtime = retailN.dtime;
+
+            //MARKET YEAR EARNING
+            DekontEarningStats market = new DekontEarningStats();
+            market = getLastEarningValue(summary.earnings, -1);
+            //market = AllEarningStats.get(0);
+
+            summary.dashboard.yearearning_market.id = 3;//Market
+            summary.dashboard.yearearning_market.Title = "Market";
+            summary.dashboard.yearearning_market.Value = market.YearEarning;
+            summary.dashboard.yearearning_market.ChangeInValue = df2.format(market.diffYearEarning).toString();
+            summary.dashboard.yearearning_market.ChangeInPerc  = df2.format(Double.parseDouble(market.changeYearEarning)).toString();
+            summary.dashboard.yearearning_market.Change2Yesterday = df2.format(Double.parseDouble(market.changeYearEarning2Yesterday)).toString();
+            summary.dashboard.yearearning_market.dtime = market.dtime;
+
+            //RETAIL QUANTITY 
+            DekontQuantityStats retailQuantity = new DekontQuantityStats();
+            retailQuantity = getLastQuantitiesValue(summary.quantities, pAccountId);
+            //retailQuantity = RetailQuantityStats.get(0);
+
+            summary.dashboard.quantity.id = 4;
+            summary.dashboard.quantity.Title = "Quantity Index";
+            summary.dashboard.quantity.Value = df2.format(retailQuantity.value).toString();
+            summary.dashboard.quantity.ChangeInValue = df2.format(retailQuantity.diff).toString();//N/A
+            summary.dashboard.quantity.ChangeInPerc = df2.format(retailQuantity.change).toString();
+            summary.dashboard.quantity.dtime = retailQuantity.refDate;
 
             return summary;
         }
@@ -120,8 +209,240 @@ public final class DekontMisc
             return summary;
         }
     }
+    
+    public static DekontQuantityStats getLastQuantitiesValue(ArrayList<DekontQuantityStats> pEarnings, long pAccountId)
+    {
+        DekontQuantityStats YEStat = new DekontQuantityStats();
+        
+        for (DekontQuantityStats statN:pEarnings)
+        {
+            if (statN.id==pAccountId)
+                YEStat = statN;
+        }
+        
+        return YEStat;
+    }
+    
+    public static DekontEarningStats getLastEarningValue(ArrayList<DekontEarningStats> pEarnings, long pAccountId)
+    {
+        DekontEarningStats QStatN = new DekontEarningStats();
+        
+        for (DekontEarningStats statN:pEarnings)
+        {
+            if (statN.id==pAccountId)
+                QStatN = statN;
+        }
+        
+        return QStatN;
+    }
 
+    public static ArrayList<DekontQuantityStats> calculateQuantityStats(  EntityManager pem, 
+                                                                          long pAccountId
+                                                                       )
+    {
+        ArrayList<DekontQuantityStats> stats = new ArrayList<DekontQuantityStats>();
+
+        try
+        {
+            String stStmt = "";
+
+            // -1 STORED FOR MARKET 
+            stStmt = "SELECT * FROM ss_mrc_stats_quantity " + 
+                     " WHERE " +
+                     " STAT = 1 AND ACCOUNT_ID = " + pAccountId + //ORDER BY UID DESC";
+                     " ORDER BY REFERENCE_DATE ASC ";
+            /*
+            }
+            else
+            {
+                stStmt = "SELECT * FROM ss_mrc_stats_quantity " + 
+                         " WHERE " +
+                         " STAT = 1 " +
+                         " ORDER BY REFERENCE_DATE ASC ";
+            }
+            */
+
+            Query newQuery = pem.CreateQuery(stStmt);
+
+            List<SsMrcStatsQuantity> rs =  newQuery.getResultList(SsMrcStatsQuantity.class);
+
+            double dLastScore = 0;
+            double dChange = 0;
+            
+            int iDayNo = 0;
+            for (SsMrcStatsQuantity statsN:rs)
+            {
+                DekontQuantityStats newStats = new DekontQuantityStats();
+
+                long lRefDate    = statsN.referenceDate;
+
+                newStats.id      = pAccountId;
+                newStats.dayNo   = iDayNo;
+                newStats.refDate = Long.toString(lRefDate);
+                //newStats.diff    = 
+                double dScore = statsN.qScore.doubleValue() * 100;
+                newStats.value = dScore;
+                
+                newStats.diff = dScore - dLastScore;
+                
+                dChange = (dScore - dLastScore)/dLastScore;
+                if (dLastScore==0)
+                    newStats.change = 0;
+                else
+                    newStats.change = dChange;
+
+                stats.add(newStats);
+
+                dLastScore = dScore;
+                iDayNo++;
+            }
+
+            return stats;
+        }
+        catch(Exception e)
+        {
+            return stats;
+        }
+    }
+
+    public static ArrayList<DekontEarningStats> calculateEarningStats(  EntityManager pem, 
+                                                                        long pAccountId
+                                                                    )
+    {
+
+        ArrayList<DekontEarningStats> earnings = new ArrayList<DekontEarningStats>();
+        
+        int iDayNo = 0;
+        try
+        {
+            // IN DB ACCOUNT_ID = -1 stored for market value
+            String stStmt = "";
+            stStmt = "SELECT T.* FROM " +
+                     "(" +
+                        "SELECT * FROM ss_mrc_stats_earnings " + 
+                                    " WHERE " +
+                                    " STAT = 1 AND ACCOUNT_ID = " + pAccountId + //ORDER BY UID DESC";
+                                    " ORDER BY REFERENCE_DATE DESC " +
+                                    " LIMIT 91 " + 
+                     ") T " + 
+                     "ORDER BY T.REFERENCE_DATE ASC";
+
+            Query newQuery = pem.CreateQuery(stStmt);
+
+            List<SsMrcStatsEarnings> rs =  newQuery.getResultList(SsMrcStatsEarnings.class);
+
+            /*
+            BigDecimal prevYearEarning    = new BigDecimal(BigInteger.ZERO);
+            BigDecimal prevYTDEarning     = new BigDecimal(BigInteger.ZERO);
+            BigDecimal currentYearEarning = new BigDecimal(BigInteger.ZERO);
+            BigDecimal currentYTDEarning  = new BigDecimal(BigInteger.ZERO);
+            BigDecimal diffYearEarning = new BigDecimal(BigInteger.ZERO);
+            BigDecimal diffYTDEarning  = new BigDecimal(BigInteger.ZERO);
+            BigDecimal changeYearEarning = new BigDecimal(BigInteger.ZERO);
+            BigDecimal changeYTDEarning  = new BigDecimal(BigInteger.ZERO);
+            */
+            //double avg_prevDayYearEarning    = 0;
+            //double avg_prevDayYTDEarning     = 0;
+            
+            //double currentYearEarning = 0;
+            //double currentYTDEarning  = 0;
+
+            double totYearEarningDayAverage = 0;//this will be used as reference to calculate the market move / position
+            double prevDayYearEarningDayAverage = 0;
+            double prevDayYearEarning = 0;
+            double prevDayYTDEarning  = 0;
+
+            int ipastYear_YearEarningCount = 0;
+
+            for (SsMrcStatsEarnings earningN:rs)
+            {
+                if (iDayNo==0)
+                {
+                    iDayNo++;
+                    continue;
+                }
+                DekontEarningStats newEarning = new DekontEarningStats();
+
+                long lRefDate       = earningN.referenceDate;
+                int  iDayMercNumber = earningN.dailyAccountNumber;//number of merchants that have entry
+
+                //YEAR EARNING (DB)
+                double currentYearEarning     = earningN.yearEarningSum.doubleValue();
+                //int iYearEarningCount         = earningN.yearEarningCount;
+                //double avg_CurrentYearEarning = earningN.yearEarningAvg.doubleValue();
+                double pastYear_YearEarning   = earningN.priorYearEarningSum.doubleValue();
+                //double avg_pastYear_YearEarning = earningN.priorYearEarningAvg.doubleValue();
+
+                //YTD (DB)
+                double currentYTDEarning      = earningN.yearToDateSum.doubleValue();
+                //int iYTDEarningCount          = earningN.yearToDateCount;
+                //double avg_CurrentYTDEarning  = earningN.yearToDateAvg.doubleValue();
+                double pastYear_YTDEarning    = earningN.priorYtdSum.doubleValue();
+
+                // Formula: Change in Earning = ( Current - Prev.Year ) / Prev. Year
+                DecimalFormat df = new DecimalFormat("#.####");
+                df.setRoundingMode(RoundingMode.CEILING);
+
+                newEarning.id      = pAccountId;
+                newEarning.dayNo   = iDayNo;
+                newEarning.refDate = Long.toString(lRefDate);
+
+                // Year Earning Difference
+                double diffYearEarning    = currentYearEarning - pastYear_YearEarning;
+                double diffYTDEarning     = currentYTDEarning  - pastYear_YTDEarning;
+                double diffYearEarning2Yesterday    = currentYearEarning - prevDayYearEarning;
+                
+                String sChangeYearEarning = "";
+                if (pastYear_YearEarning==0)
+                    sChangeYearEarning = "0";
+                else
+                    sChangeYearEarning = df.format((diffYearEarning / pastYear_YearEarning) * 100);
+                double changeYearEarning = Double.parseDouble(sChangeYearEarning);
+                
+                String sChange2Yesterday = "";
+                if (prevDayYearEarning==0)
+                    sChange2Yesterday = "0";
+                else
+                    sChange2Yesterday = df.format((diffYearEarning2Yesterday / prevDayYearEarning) * 100);
+                double changeYearEarning2Yesterday = Double.parseDouble(sChange2Yesterday);
+                
+                String sChangeYTDEarning = "";
+                if (pastYear_YTDEarning==0)
+                    sChangeYTDEarning = "0";
+                else
+                    sChangeYTDEarning = df.format((diffYTDEarning / pastYear_YTDEarning) * 100);
+
+                double changeYTDEarning  = Double.parseDouble(sChangeYTDEarning);
+
+                newEarning.dtime = Long.toString(earningN.insertdate);
+                newEarning.YearEarning = Double.toString(currentYearEarning);
+                newEarning.YTDEarning  = Double.toString(currentYTDEarning);
+
+                newEarning.diffYearEarning = diffYearEarning;
+                newEarning.diffYTD         = diffYTDEarning;
+                newEarning.changeYearEarning = Double.toString(changeYearEarning);
+                newEarning.changeYTDEarning  = Double.toString(changeYTDEarning);
+                newEarning.changeYearEarning2Yesterday = Double.toString(changeYearEarning2Yesterday);
+                
+                earnings.add(newEarning);
+
+                //PREV DAY YEAR
+                prevDayYearEarning = earningN.yearEarningSum.doubleValue();
+                prevDayYearEarningDayAverage = totYearEarningDayAverage;
+
+                iDayNo++;
+            }
+
+            return earnings;
+        }
+        catch(Exception e)
+        {
+            return null;
+        }
+    }
+    
     public static ArrayList<DekontSummaryRec> calculateSummaryRecords(  EntityManager pem, 
+                                                                        long pMerchantId,
                                                                         String pBaseCurrency, 
                                                                         String pTargetCurrency, 
                                                                         int pBankCode, 
@@ -142,7 +463,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_MONTH_NO"  , Integer.class      , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1                 , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pMerchantId        , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency      , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency    , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBankCode          , "P_BNK_CODE");
@@ -189,6 +510,7 @@ public final class DekontMisc
     }
 
     public static DekontSummaryUseRates calculateSummaryUseRates(EntityManager pem, 
+                                                                 long pAccountId,
                                                                  String pBaseCurrency, 
                                                                  String pTargetCurrency)
     {
@@ -203,7 +525,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_TARGET_CURRENCY"  , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId             , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
 
@@ -231,6 +553,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryYear> calculateSummaryOverall( EntityManager pem, 
+                                                                        long pAccountId,
                                                                         String pBaseCurrency, 
                                                                         String pTargetCurrency)
     {
@@ -245,7 +568,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_TO_CURRENCY"  , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_FROM_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TO_CURRENCY");
 
@@ -273,6 +596,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryTots> calculateSummaryBankSubtotals(EntityManager pem,
+                                                                             long pAccountId,
                                                                              String pBaseCurrency, 
                                                                              String pTargetCurrency, 
                                                                              String pBaseYear, 
@@ -291,7 +615,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_MONTH"     , String.class  , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
@@ -324,6 +648,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryYear> calculateSummaryYears(EntityManager pem,
+                                                                     long pAccountId,
                                                                      String pBaseCurrency, 
                                                                      String pTargetCurrency, 
                                                                      String pBaseYear)
@@ -340,7 +665,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_YEAR"        , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
@@ -371,6 +696,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryQuarterDay> calculateSummaryQuarterDays(EntityManager pem, 
+                                                                                 long pAccountId,
                                                                                  String pBaseCurrency, 
                                                                                  String pTargetCurrency, 
                                                                                  String pBaseYear)
@@ -387,7 +713,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_YEAR"        , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
@@ -419,7 +745,8 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryQuarterWeek> calculateSummaryQuarterWeeks(EntityManager pem, 
-                                                                                   String pBaseCurrency, 
+                                                                                    long pAccountId,                                                                       
+                                                                                    String pBaseCurrency, 
                                                                                    String pTargetCurrency, 
                                                                                    String pBaseYear)
     {
@@ -435,7 +762,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_YEAR" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
@@ -467,6 +794,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryDay> calculateSummaryTargetMonthDayAverages(EntityManager pem, 
+                                                                                     long pAccountId,
                                                                                      String pBaseCurrency, 
                                                                                      String pTargetCurrency, 
                                                                                      String pBaseYear, 
@@ -485,7 +813,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId             , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
@@ -516,6 +844,7 @@ public final class DekontMisc
     }
     
     public static ArrayList<DekontSummaryDay> calculateSummaryDays(EntityManager pem, 
+                                                                   long pAccountId,
                                                                    String pBaseCurrency, 
                                                                    String pTargetCurrency, 
                                                                    String pBaseYear, 
@@ -534,7 +863,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId     , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
@@ -564,6 +893,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryWeek> calculateSummaryWeeks(EntityManager pem,
+                                                                     long pAccountId,
                                                                      String pBaseCurrency, 
                                                                      String pTargetCurrency,
                                                                      String pBaseYear, 
@@ -582,7 +912,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId             , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");
@@ -612,6 +942,7 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontSummaryWeek> calculateSummaryWeeksOfMonth(EntityManager pem,
+                                                                            long pAccountId,
                                                                             String pBaseCurrency, 
                                                                             String pTargetCurrency, 
                                                                             String pBaseYear, 
@@ -630,7 +961,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_MONTH" , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId             , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency  , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency, "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear      , "P_BASE_YEAR");

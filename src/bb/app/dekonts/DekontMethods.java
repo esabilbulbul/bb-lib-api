@@ -47,6 +47,7 @@ public final class DekontMethods
      * 
      * @param args the command line arguments
      */
+    // bSkipFile = skips writing to file
     public static ArrayList<DekontFields> processFile(String psInFilePath, String psOutFilePath, boolean bSkipFile, String psAccountOwnerName)
     {
         int iRecNo=0;

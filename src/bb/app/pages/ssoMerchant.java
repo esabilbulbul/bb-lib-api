@@ -13,10 +13,12 @@ public class ssoMerchant
 {
     public String name;
     public String id;
+    public String isDefault;
     
     public ssoMerchant()
     {
         name = "";
         id = "";
+        isDefault = "N";
     }
 }
