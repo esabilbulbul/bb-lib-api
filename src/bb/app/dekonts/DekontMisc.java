@@ -75,6 +75,48 @@ public final class DekontMisc
         return sMonthNo;
     }
 
+    public static ArrayList<DekontEarningStats> calculateSummary_YearEarningOnly(   EntityManager pem, 
+                                                                                    long pAccountId, //merchant Id
+                                                                                    String pMerchantName,
+                                                                                    String pBaseCurrency, 
+                                                                                    String pTargetCurrency, 
+                                                                                    int pBankCode, 
+                                                                                    int pYear, 
+                                                                                    int pMonth,
+                                                                                    int pYearEarningLength) throws Exception
+    {
+        ArrayList<DekontEarningStats> earnings = new ArrayList<DekontEarningStats>();
+
+        try
+        {
+            String SCAN_DAY_BEGINNING = "20190101";//DON'T CHANGE this. Works sync with earnings-stats Worker
+            int iDayBackLength = 90;//default;
+
+            if (pYearEarningLength==-1)
+            {
+                long lRefDate = Long.parseLong(Util.DateTime.GetDateTime_s().substring(0, 8));
+                iDayBackLength = Util.DateTime.getDifferenceInDays(SCAN_DAY_BEGINNING, Long.toString(lRefDate) );
+            }
+            else
+                iDayBackLength = pYearEarningLength;
+
+            ArrayList<DekontEarningStats> AllEarningStats = new ArrayList<DekontEarningStats>();
+            ArrayList<DekontEarningStats> RetailEarningStats = new ArrayList<DekontEarningStats>();
+
+            RetailEarningStats = calculateEarningStats(pem, pAccountId, pMerchantName, iDayBackLength);//for test
+            AllEarningStats    = calculateEarningStats(pem, -1, "", iDayBackLength);
+
+            earnings.addAll(RetailEarningStats);
+            earnings.addAll(AllEarningStats);
+            
+            return earnings;
+        }
+        catch(Exception e)
+        {
+            throw e;
+        }
+    }
+
     public static DekontSummary calculateSummary(EntityManager pem, 
                                                  long pAccountId, //merchant Id
                                                  String pMerchantName,
@@ -82,7 +124,8 @@ public final class DekontMisc
                                                  String pTargetCurrency, 
                                                  int pBankCode, 
                                                  int pYear, 
-                                                 int pMonth)
+                                                 int pMonth,
+                                                 int pYearEarningLength)
     {
         DekontSummary summary = new DekontSummary();
 
@@ -129,9 +172,9 @@ public final class DekontMisc
             //------------------------------------------------------------------
             ArrayList<DekontEarningStats> RetailEarningStats = new ArrayList<DekontEarningStats>();
             ArrayList<DekontEarningStats> AllEarningStats = new ArrayList<DekontEarningStats>();
-            RetailEarningStats = calculateEarningStats(pem, pAccountId);//for test
-            AllEarningStats    = calculateEarningStats(pem, -1);
-            
+            RetailEarningStats = calculateEarningStats(pem, pAccountId, pMerchantName, pYearEarningLength);//for test
+            AllEarningStats    = calculateEarningStats(pem, -1, "", pYearEarningLength);
+
             if (RetailEarningStats!=null)
                 summary.earnings.addAll(RetailEarningStats);
 
@@ -142,65 +185,13 @@ public final class DekontMisc
             //------------------------------------------------------------------
             ArrayList<DekontQuantityStats> RetailQuantityStats = new ArrayList<DekontQuantityStats>();
             ArrayList<DekontQuantityStats> AllQuantityStats    = new ArrayList<DekontQuantityStats>();
-            RetailQuantityStats = calculateQuantityStats(pem, pAccountId);//for test
-            AllQuantityStats    = calculateQuantityStats(pem, -1);
+            RetailQuantityStats = calculateQuantityStats(pem, pAccountId, pMerchantName);//for test
+            AllQuantityStats    = calculateQuantityStats(pem, -1, "");
 
             summary.quantities.addAll(RetailQuantityStats);
             summary.quantities.addAll(AllQuantityStats);
 
-            //Dashboard
-            //------------------------------------------------------------------
-            DecimalFormat df2 = new DecimalFormat("#.##");
-            df2.setRoundingMode(RoundingMode.UP);
-            
-            DecimalFormat df3 = new DecimalFormat("#.###");
-            df3.setRoundingMode(RoundingMode.UP);
-            //Retail YEar Earning
-            DekontEarningStats retailN = new DekontEarningStats();
-            retailN = getLastEarningValue(summary.earnings, pAccountId);
-            //retailN = RetailEarningStats.get(0);
-
-            //RETAIL - YEAR EARNING
-            summary.dashboard.yearearning_mybiz.id = 1;//Retail-YE
-            summary.dashboard.yearearning_mybiz.Title = pMerchantName;
-            summary.dashboard.yearearning_mybiz.Value = retailN.YearEarning;
-            summary.dashboard.yearearning_mybiz.ChangeInValue = df2.format(retailN.diffYearEarning).toString();
-            summary.dashboard.yearearning_mybiz.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYearEarning)).toString();
-            summary.dashboard.yearearning_mybiz.Change2Yesterday = df2.format(Double.parseDouble(retailN.changeYearEarning2Yesterday)).toString();
-            summary.dashboard.yearearning_mybiz.dtime = retailN.dtime;
-
-            //RETAIL - YEAR TO DATE
-            summary.dashboard.ytd.id = 2;//Retail-YTD
-            summary.dashboard.ytd.Title = pMerchantName + " - ytd";
-            summary.dashboard.ytd.Value = retailN.YTDEarning;
-            summary.dashboard.ytd.ChangeInValue = df2.format(retailN.diffYTD);
-            summary.dashboard.ytd.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYTDEarning)).toString();
-            summary.dashboard.ytd.dtime = retailN.dtime;
-
-            //MARKET YEAR EARNING
-            DekontEarningStats market = new DekontEarningStats();
-            market = getLastEarningValue(summary.earnings, -1);
-            //market = AllEarningStats.get(0);
-
-            summary.dashboard.yearearning_market.id = 3;//Market
-            summary.dashboard.yearearning_market.Title = "Market";
-            summary.dashboard.yearearning_market.Value = market.YearEarning;
-            summary.dashboard.yearearning_market.ChangeInValue = df2.format(market.diffYearEarning).toString();
-            summary.dashboard.yearearning_market.ChangeInPerc  = df2.format(Double.parseDouble(market.changeYearEarning)).toString();
-            summary.dashboard.yearearning_market.Change2Yesterday = df2.format(Double.parseDouble(market.changeYearEarning2Yesterday)).toString();
-            summary.dashboard.yearearning_market.dtime = market.dtime;
-
-            //RETAIL QUANTITY 
-            DekontQuantityStats retailQuantity = new DekontQuantityStats();
-            retailQuantity = getLastQuantitiesValue(summary.quantities, pAccountId);
-            //retailQuantity = RetailQuantityStats.get(0);
-
-            summary.dashboard.quantity.id = 4;
-            summary.dashboard.quantity.Title = "Quantity Index";
-            summary.dashboard.quantity.Value = df2.format(retailQuantity.value).toString();
-            summary.dashboard.quantity.ChangeInValue = df2.format(retailQuantity.diff).toString();//N/A
-            summary.dashboard.quantity.ChangeInPerc = df2.format(retailQuantity.change).toString();
-            summary.dashboard.quantity.dtime = retailQuantity.refDate;
+            summary.dashboard = getDashboardValues(pMerchantName, pAccountId, summary.earnings, summary.quantities);
 
             return summary;
         }
@@ -209,7 +200,81 @@ public final class DekontMisc
             return summary;
         }
     }
-    
+
+    public static DekontSummaryStats getDashboardValues(String pMerchantName, 
+                                                        long pAccountId, //merchant Id
+                                                        ArrayList<DekontEarningStats> pYearEarnings,
+                                                        ArrayList<DekontQuantityStats> pQuantities
+                                                       )
+    {
+        DekontSummaryStats dashboard = new DekontSummaryStats();
+
+        //Dashboard
+        //------------------------------------------------------------------
+        DecimalFormat df2 = new DecimalFormat("#.##");
+        df2.setRoundingMode(RoundingMode.UP);
+
+        DecimalFormat df3 = new DecimalFormat("#.###");
+        df3.setRoundingMode(RoundingMode.UP);
+        //Retail YEar Earning
+        DekontEarningStats retailN = new DekontEarningStats();
+        retailN = getLastEarningValue(pYearEarnings, pAccountId);
+        //retailN = RetailEarningStats.get(0);
+
+        //RETAIL - YEAR EARNING
+        dashboard.yearearning_mybiz.id = 1;//Retail-YE
+        dashboard.yearearning_mybiz.Title = pMerchantName;
+        dashboard.yearearning_mybiz.Value = retailN.YearEarning;
+        dashboard.yearearning_mybiz.ChangeInValue = df2.format(retailN.diffYearEarning).toString();
+        if (retailN.changeYearEarning.length()!=0)
+            dashboard.yearearning_mybiz.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYearEarning)).toString();
+        if (retailN.changeYearEarning2Yesterday.length()!=0)
+            dashboard.yearearning_mybiz.ChangeInPerc2Yesterday = df2.format(Double.parseDouble(retailN.changeYearEarning2Yesterday)).toString();
+        
+        dashboard.yearearning_mybiz.ChangeInValue2Yesterday = df2.format(retailN.diffYearEarning2Yesterday).toString();
+        dashboard.yearearning_mybiz.dtime = retailN.dtime;
+
+        //RETAIL - YEAR TO DATE
+        dashboard.ytd.id = 2;//Retail-YTD
+        dashboard.ytd.Title = pMerchantName + " - ytd";
+        dashboard.ytd.Value = retailN.YTDEarning;
+        dashboard.ytd.ChangeInValue = df2.format(retailN.diffYTD);
+        if (retailN.changeYTDEarning.length()!=0)
+            dashboard.ytd.ChangeInPerc  = df2.format(Double.parseDouble(retailN.changeYTDEarning)).toString();
+        dashboard.ytd.dtime = retailN.dtime;
+
+        //MARKET YEAR EARNING
+        DekontEarningStats market = new DekontEarningStats();
+        market = getLastEarningValue(pYearEarnings, -1);
+        //market = AllEarningStats.get(0);
+
+        dashboard.yearearning_market.id = 3;//Market
+        dashboard.yearearning_market.Title = "Market";
+        dashboard.yearearning_market.Value = market.YearEarning;
+        dashboard.yearearning_market.ChangeInValue = df2.format(market.diffYearEarning).toString();
+        if (market.changeYearEarning.length()!=0)
+            dashboard.yearearning_market.ChangeInPerc  = df2.format(Double.parseDouble(market.changeYearEarning)).toString();
+        //ChangeInValue2Yesterday
+        if (market.changeYearEarning2Yesterday.length()!=0)
+            dashboard.yearearning_market.ChangeInPerc2Yesterday  = df2.format(Double.parseDouble(market.changeYearEarning2Yesterday)).toString();
+        dashboard.yearearning_market.ChangeInValue2Yesterday = df2.format(market.diffYearEarning2Yesterday).toString();
+        dashboard.yearearning_market.dtime = market.dtime;
+
+        //RETAIL QUANTITY 
+        DekontQuantityStats retailQuantity = new DekontQuantityStats();
+        retailQuantity = getLastQuantitiesValue(pQuantities, pAccountId);
+        //retailQuantity = RetailQuantityStats.get(0);
+
+        dashboard.quantity.id = 4;
+        dashboard.quantity.Title = "Quantity Index";
+        dashboard.quantity.Value = df2.format(retailQuantity.value).toString();
+        dashboard.quantity.ChangeInValue = df2.format(retailQuantity.diff).toString();//N/A
+        dashboard.quantity.ChangeInPerc = df2.format(retailQuantity.change).toString();
+        dashboard.quantity.dtime = retailQuantity.refDate;
+
+        return dashboard;
+    }
+
     public static DekontQuantityStats getLastQuantitiesValue(ArrayList<DekontQuantityStats> pEarnings, long pAccountId)
     {
         DekontQuantityStats YEStat = new DekontQuantityStats();
@@ -237,7 +302,8 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontQuantityStats> calculateQuantityStats(  EntityManager pem, 
-                                                                          long pAccountId
+                                                                          long pAccountId,
+                                                                          String pMerchantName
                                                                        )
     {
         ArrayList<DekontQuantityStats> stats = new ArrayList<DekontQuantityStats>();
@@ -268,7 +334,7 @@ public final class DekontMisc
 
             double dLastScore = 0;
             double dChange = 0;
-            
+
             int iDayNo = 0;
             for (SsMrcStatsQuantity statsN:rs)
             {
@@ -277,6 +343,7 @@ public final class DekontMisc
                 long lRefDate    = statsN.referenceDate;
 
                 newStats.id      = pAccountId;
+                newStats.name    = pMerchantName;
                 newStats.dayNo   = iDayNo;
                 newStats.refDate = Long.toString(lRefDate);
                 //newStats.diff    = 
@@ -306,7 +373,9 @@ public final class DekontMisc
     }
 
     public static ArrayList<DekontEarningStats> calculateEarningStats(  EntityManager pem, 
-                                                                        long pAccountId
+                                                                        long pAccountId,
+                                                                        String pAccountName,//pMerchantName
+                                                                        int pYearEarningLength
                                                                     )
     {
 
@@ -323,7 +392,7 @@ public final class DekontMisc
                                     " WHERE " +
                                     " STAT = 1 AND ACCOUNT_ID = " + pAccountId + //ORDER BY UID DESC";
                                     " ORDER BY REFERENCE_DATE DESC " +
-                                    " LIMIT 91 " + 
+                                    " LIMIT " + (pYearEarningLength + 1) + 
                      ") T " + 
                      "ORDER BY T.REFERENCE_DATE ASC";
 
@@ -361,10 +430,14 @@ public final class DekontMisc
                     iDayNo++;
                     continue;
                 }
+
                 DekontEarningStats newEarning = new DekontEarningStats();
 
                 long lRefDate       = earningN.referenceDate;
                 int  iDayMercNumber = earningN.dailyAccountNumber;//number of merchants that have entry
+
+                if (lRefDate==20191230)
+                    lRefDate = lRefDate;
 
                 //YEAR EARNING (DB)
                 double currentYearEarning     = earningN.yearEarningSum.doubleValue();
@@ -384,6 +457,7 @@ public final class DekontMisc
                 df.setRoundingMode(RoundingMode.CEILING);
 
                 newEarning.id      = pAccountId;
+                newEarning.name    = pAccountName;
                 newEarning.dayNo   = iDayNo;
                 newEarning.refDate = Long.toString(lRefDate);
 
@@ -405,7 +479,7 @@ public final class DekontMisc
                 else
                     sChange2Yesterday = df.format((diffYearEarning2Yesterday / prevDayYearEarning) * 100);
                 double changeYearEarning2Yesterday = Double.parseDouble(sChange2Yesterday);
-                
+
                 String sChangeYTDEarning = "";
                 if (pastYear_YTDEarning==0)
                     sChangeYTDEarning = "0";
@@ -422,8 +496,10 @@ public final class DekontMisc
                 newEarning.diffYTD         = diffYTDEarning;
                 newEarning.changeYearEarning = Double.toString(changeYearEarning);
                 newEarning.changeYTDEarning  = Double.toString(changeYTDEarning);
-                newEarning.changeYearEarning2Yesterday = Double.toString(changeYearEarning2Yesterday);
                 
+                newEarning.changeYearEarning2Yesterday = Double.toString(changeYearEarning2Yesterday);
+                newEarning.diffYearEarning2Yesterday = diffYearEarning2Yesterday;
+
                 earnings.add(newEarning);
 
                 //PREV DAY YEAR
@@ -568,7 +644,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_TO_CURRENCY"  , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId      , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_FROM_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TO_CURRENCY");
 
@@ -713,7 +789,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_BASE_YEAR"        , String.class     , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, pAccountId              , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pAccountId      , "P_MRC_ID");
             SP.SetParameter(Colindex++, pBaseCurrency   , "P_BASE_CURRENCY");
             SP.SetParameter(Colindex++, pTargetCurrency , "P_TARGET_CURRENCY");
             SP.SetParameter(Colindex++, pBaseYear       , "P_BASE_YEAR");
@@ -1001,9 +1077,9 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_AMOUNT"    , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
-            SP.SetParameter(Colindex++, pTxnDate       , "P_EOD_DATE");
-            SP.SetParameter(Colindex++, pAmount        , "P_AMOUNT");
+            SP.SetParameter(Colindex++, Long.parseLong(pMrcId ) , "P_MRC_ID");
+            SP.SetParameter(Colindex++, pTxnDate                , "P_EOD_DATE");
+            SP.SetParameter(Colindex++, pAmount                 , "P_AMOUNT");
 
             SP.execute();
 
@@ -1025,7 +1101,7 @@ public final class DekontMisc
             SP.registerStoredProcedureParameter("P_TXN_DATE"  , String.class   , ParameterMode.IN);
 
             int Colindex = 1;
-            SP.SetParameter(Colindex++, -1             , "P_MRC_ID");
+            SP.SetParameter(Colindex++, Long.parseLong(pMrcId)             , "P_MRC_ID");
             SP.SetParameter(Colindex++, pTxnDate       , "P_TXN_DATE");
 
             SP.execute();

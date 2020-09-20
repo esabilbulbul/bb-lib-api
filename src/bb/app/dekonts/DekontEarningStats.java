@@ -12,9 +12,11 @@ package bb.app.dekonts;
 public class DekontEarningStats 
 {
     public long   id = 0;//merchant id
+    public String name = "";
+    
     public String dtime = "";
     public int    dayNo = 0;    
-    public String refDate = "";
+    public String refDate = "";    
     
     public String avgYearEarning = "";
     public String avgYTDEarning = "";
@@ -28,6 +30,7 @@ public class DekontEarningStats
     public String   changeYearEarning = "";//in perc
     public String   changeYTDEarning = "";//Year to Date
     
+    public double   diffYearEarning2Yesterday = 0;
     public String   changeYearEarning2Yesterday = "";//in perc
     
 
