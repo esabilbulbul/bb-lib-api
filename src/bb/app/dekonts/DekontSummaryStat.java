@@ -16,6 +16,7 @@ public class DekontSummaryStat
     public String Value = "";
     public String ChangeInValue = "";
     public String ChangeInPerc  = "";
-    public String Change2Yesterday  = "";
+    public String ChangeInValue2Yesterday  = "";
+    public String ChangeInPerc2Yesterday   = "";
     public String dtime = "";
 }

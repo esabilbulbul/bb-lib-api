@@ -12,6 +12,7 @@ package bb.app.dekonts;
 public class DekontQuantityStats {
     
     public long   id = 0;//merchant id
+    public String name= "";//don't change this name
     public int    dayNo = 0;    
     
     public String refDate = "";

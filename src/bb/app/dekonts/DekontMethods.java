@@ -5,6 +5,7 @@
  */
 package bb.app.dekonts;
 
+import bb.app.account.AccountMisc;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -476,7 +477,7 @@ public final class DekontMethods
                 
         }
 
-        fields.Date     = DekontMisc.formatDate(fields.Date);
+        fields.Date     = AccountMisc.formatDate(fields.Date);
         fields.bankCode = Integer.toString(piBankCode);
         if (piBankCode==BANK_CODE_KUVEYT)
         {
@@ -521,7 +522,7 @@ public final class DekontMethods
                         String[] sDateTime = sColData.split("-");
                         fields.Date = sDateTime[0];
                         
-                        fields.MonthNo = DekontMisc.getMonthNumber(fields.Date);
+                        fields.MonthNo = AccountMisc.getMonthNumber(fields.Date);
                         //fields.Time = sDateTime[1];
 
                         //String[] sDateParts = fields.Date.split("\\.");
@@ -604,7 +605,7 @@ public final class DekontMethods
                 fields.Amount  = sCols[2];
                 fields.Balance = sCols[3];
                 fields.refNo   = fields.TraceNo;
-                fields.MonthNo = DekontMisc.getMonthNumber(fields.Date);
+                fields.MonthNo = AccountMisc.getMonthNumber(fields.Date);
             }
             else
             {
@@ -621,7 +622,7 @@ public final class DekontMethods
                 fields.Amount  = sCols[sCols.length-4];
                 fields.Balance = sCols[sCols.length-3];
                 fields.refNo   = fields.TraceNo;
-                fields.MonthNo = DekontMisc.getMonthNumber(fields.Date);
+                fields.MonthNo = AccountMisc.getMonthNumber(fields.Date);
             }
 
         }

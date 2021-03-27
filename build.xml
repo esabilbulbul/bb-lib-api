@@ -7,8 +7,8 @@
 <!-- the Compile on Save feature is turned off for the project. -->
 <!-- You can turn off the Compile on Save (or Deploy on Save) setting -->
 <!-- in the project's Project Properties dialog box.-->
-<project name="bb-lib-dekont-converter" default="default" basedir=".">
-    <description>Builds, tests, and runs the project bb-lib-dekont-converter.</description>
+<project name="bb-lib-api" default="default" basedir=".">
+    <description>Builds, tests, and runs the project bb-lib-api.</description>
     <import file="nbproject/build-impl.xml"/>
     <!--
 
@@ -58,7 +58,7 @@
 
     An example of overriding the target for project execution could look like this:
 
-        <target name="run" depends="bb-lib-dekont-converter-impl.jar">
+        <target name="run" depends="bb-lib-api-impl.jar">
             <exec dir="bin" executable="launcher.exe">
                 <arg file="${dist.jar}"/>
             </exec>

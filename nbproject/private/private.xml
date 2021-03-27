@@ -3,8 +3,11 @@
     <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/2" lastBookmarkId="0"/>
     <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
         <group>
-            <file>file:/Users/esabil/Documents/code/SHIPSHUK/BULBULLER/bb-lib-dekont-converter/src/bb/app/dekonts/DekontMisc.java</file>
-            <file>file:/Users/esabil/Documents/code/SHIPSHUK/BULBULLER/bb-lib-dekont-converter/src/bb/app/dekonts/DekontSummary.java</file>
+            <file>file:/D:/neotemp/code/SHIPSHUK/BULBULLER/bb-lib-api/src/bb/app/inv/ssoInventoryParams.java</file>
+            <file>file:/D:/neotemp/code/SHIPSHUK/BULBULLER/bb-lib-api/src/apicallbacks/InventoryCallbacks.java</file>
+            <file>file:/D:/neotemp/code/SHIPSHUK/BULBULLER/bb-lib-api/src/bb/app/dekonts/DekontEarningStats.java</file>
+            <file>file:/D:/neotemp/code/SHIPSHUK/BULBULLER/bb-lib-api/src/bb/app/inv/InventoryOps.java</file>
+            <file>file:/D:/neotemp/code/SHIPSHUK/BULBULLER/bb-lib-api/src/bb/app/pages/ssoInvBrandItemCodes.java</file>
         </group>
     </open-files>
 </project-private>

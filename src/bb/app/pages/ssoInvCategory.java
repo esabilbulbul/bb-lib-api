@@ -7,18 +7,10 @@ package bb.app.pages;
 
 /**
  *
- * @author esabil
+ * @author Administrator
  */
-public class ssoMerchant 
+public class ssoInvCategory 
 {
-    public String name;
-    public long   id;
-    public String isDefault;
-    
-    public ssoMerchant()
-    {
-        name = "";
-        id = 0;
-        isDefault = "N";
-    }
+    public long code = 0;//category code
+    public String name = "";//category name
 }
