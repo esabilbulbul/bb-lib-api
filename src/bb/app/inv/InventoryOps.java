@@ -5,8 +5,13 @@
  */
 package bb.app.inv;
 
+import bb.app.obj.ssoInventoryParams;
+import bb.app.obj.ssoItemOption;
+import bb.app.obj.ssoBrand;
+import bb.reports.ssReportSearchInventory;
 import bb.app.account.ssoAccInvBalanceCore;
 import bb.app.account.AccountMisc;
+import bb.app.account.ssoAccStmtCore;
 import bb.app.account.ssoUIBalanceItem;
 import java.util.List;
 import jaxesa.persistence.EntityManager;
@@ -16,7 +21,7 @@ import jaxesa.persistence.annotations.ParameterMode;
 import jaxesa.persistence.misc.RowColumn;
 import entity.inv.SsInvAccounting;
 import entity.inv.SsInvItemsOptions;
-import entity.mrc.SsMrcDataEod;
+import entity.mrc.SsMrcCashRegEod;
 import entity.mrc.SsMrcDataPosTxn;
 import entity.mrc.SsMrcMerchants;
 import entity.prm.SsPrmCountryStates;
@@ -25,22 +30,31 @@ import entity.prm.SsPrmCountryPostcodes;
 import java.util.ArrayList;
 import jaxesa.util.Util;
 import bb.app.inv.InventoryOps;
-import bb.app.pages.ssoCityCode;
-import bb.app.pages.ssoPostCode;
-import bb.app.pages.ssoCountryCodes;
-import bb.app.pages.ssoCountyCode;
-import bb.app.pages.ssoInvBrandItemCodes;
-import bb.app.pages.ssoInvCategory;
-import bb.app.pages.ssoMCC;
-import bb.app.pages.ssoMerchant;
-import bb.app.pages.ssoMerchantPreferences;
-import bb.app.pages.ssoPageParams;
-import entity.acc.SsAccInvBrands;
+import bb.app.obj.ssoCityCode;
+import bb.app.obj.ssoPostCode;
+import bb.app.obj.ssoCountryCodes;
+import bb.app.obj.ssoCountyCode;
+import bb.app.obj.ssoInvBrandItemCodes;
+import bb.app.obj.ssoInvCategory;
+import bb.app.obj.ssoMCC;
+import bb.app.obj.ssoMerchant;
+import bb.app.obj.ssoMerchantPreferences;
+import bb.app.obj.ssoPageParams;
+import bb.app.account.UserOps;
+import bb.app.dict.DictionaryOps;
+import bb.app.obj.ssoItemOptionGroup;
+import bb.app.obj.ssoItemOptionZipped;
+import bb.app.obj.ssoPrintByBillData;
+import bb.app.bill.ssoBillTotals;
+import bb.app.stmt.InventoryStatement;
+import bb.app.txn.txnDefs;
+import bb.app.vendor.VendorOps;
+import entity.acc.SsAccInvVendorStats;
 import entity.inv.SsInvItemCodeQuantity;
 import entity.inv.SsInvItemOptionsQuantity;
-import entity.inv.SsInvTransactions;
-import entity.prm.SsPrmInvCategories;
-import entity.prm.SsPrmInvItemCodes;
+import entity.txn.SsTxnInvBillDets;
+import entity.dct.SsDctInvCategories;
+import entity.dct.SsDctInvVendorSummary;
 import entity.prm.SsPrmMcc;
 import entity.seo.SsPrmCatalogFamily;
 import entity.test.TestCache;
@@ -55,14 +69,18 @@ import redis.clients.jedis.Jedis;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import entity.acc.SsAccInvBrandItemCodes;
-import entity.acc.SsAccInvBrandItemCodesLog;
-import entity.acc.SsAccInvBrandItemOptions;
-import entity.acc.SsAccInvBrandItemOptionsLog;
-import entity.acc.SsAccInvBrandItemPrice;
-import entity.acc.SsAccInvBrandsLog;
+import entity.acc.SsAccInvVendors;
+import entity.acc.SsAccInvItemStats;
+import entity.acc.SsAccInvItemLog;
+import entity.acc.SsAccInvOptionStats;
+import entity.acc.SsAccInvOptionLog;
+import entity.acc.SsAccInvItemPrice;
+import entity.acc.SsAccInvVendorLog;
+import entity.txn.SsTxnInvBill;
 import java.math.BigInteger;
 import java.util.Set;
+import jaxesa.annotations.PathParam;
+import jaxesa.webapi.ssoAPIResponse;
 
 
 /**
@@ -73,9 +91,9 @@ public final class InventoryOps
 {
     public static int gINV_TXN_CACHE_TIMEOUT = 60 * 5;//5min 
 
-    public static String gTXNTYPE_KEY_NEW_ITEM      = "N";
-    public static String gTXNTYPE_KEY_EXISTING_ITEM = "E";
-    public static String gTXNTYPE_KEY_RETURN        = "R";
+    //public static String gTXNTYPE_KEY_NEW_ITEM      = "N";
+    //public static String gTXNTYPE_KEY_EXISTING_ITEM = "E";
+    //public static String gTXNTYPE_KEY_RETURN        = "R";
 
     public static long save2Inventory(EntityManager pem,
                                       long           pUserId,
@@ -108,8 +126,9 @@ public final class InventoryOps
             long lInventoryTxnUID = 0;
             if (rc==false)
             {
-                
-                lInventoryTxnUID = saveInventoryTransaction( pem,
+                // Save Txn
+                /*
+                lInventoryTxnUID = saveInventoryTransaction(pem,
                                                             pUserId,
                                                             pAccId,
                                                             psLang,
@@ -128,6 +147,7 @@ public final class InventoryOps
                                                             psOptions,
                                                             psBillingDate,
                                                             psDesc);
+                */
                 
                 saveTxn2Cache(jedis, pAccId, psSessionId);//in case the txn repeated in next transaction by mistake
             }
@@ -243,34 +263,6 @@ public final class InventoryOps
         }
     }
 
-    public static SsAccInvBrands readBrandInfo(EntityManager pem, long pAccountId, String pBrandName) throws Exception
-    {
-        SsAccInvBrands balance = new SsAccInvBrands();
-
-        try
-        {
-            ArrayList<ssoKeyField> keys = new ArrayList<ssoKeyField>();
-
-            ssoKeyField KeyUserId = new ssoKeyField();
-            KeyUserId.ColumnName = "ACCOUNT_ID";
-            KeyUserId.Value      = pAccountId;
-            keys.add(KeyUserId);
-
-            ssoKeyField KeyAccountId = new ssoKeyField();
-            KeyAccountId.ColumnName = "BRAND";
-            KeyAccountId.Value      = pBrandName;
-            keys.add(KeyAccountId);
-
-            balance = pem.find(SsAccInvBrands.class, keys);
-
-            return balance;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
     public static void save2InventoryOptions(   EntityManager  pem, 
                                                 long           pAccId, 
                                                 long           pItemTxnUID,
@@ -310,95 +302,6 @@ public final class InventoryOps
         }
     }
 
-    public static long saveInventoryTransaction(EntityManager pem,
-                                                long           pUserId,
-                                                long           pAccId,
-                                                String         psLang,
-                                                String         psCountry,
-                                                String         psSessionId,
-                                                String         psTxnType,
-                                                String         psBrand,
-                                                String         psItemCode,
-                                                String         psCategory,
-                                                String         psQuantity,
-                                                String         psQuantityType,
-                                                String         psEntryPrice,
-                                                String         psDiscount,
-                                                String         psTax,
-                                                String         psSalesPrice,
-                                                String         psOptions,
-                                                String         psBillingDate,
-                                                String         psDesc) throws Exception
-    {
-
-        try
-        {
-            
-            SsInvTransactions   invTxn  = new SsInvTransactions();
-
-            int  lQuantity = Integer.parseInt(psQuantity);
-
-            //String sBillDate = psBillingDate.replace("-","");
-            //sBillDate = sBillDate.replace(".","");
-
-            long lBillDate = Long.parseLong(psBillingDate);
-            BigDecimal  bdPriceEntry = new BigDecimal(psEntryPrice);
-            BigDecimal  bdDiscount   = new BigDecimal(psDiscount);
-            BigDecimal  bdTax        = new BigDecimal(psTax);
-            BigDecimal  bdPriceSale  = new BigDecimal(psSalesPrice);
-
-            invTxn.accountId   = pAccId;
-            invTxn.txnType     = psTxnType;
-            invTxn.itemBrand   = psBrand;
-            invTxn.itemCode    = psItemCode;
-            invTxn.quantity    = lQuantity;
-            invTxn.priceEntry  = bdPriceEntry;
-            invTxn.discount    = bdDiscount;
-            invTxn.tax         = bdTax;
-            invTxn.priceSales  = bdPriceSale;
-            invTxn.options     = psOptions;
-            invTxn.stmtDate    = lBillDate;
-
-            //BigDecimal bdTot1         = invTxn.priceEntry.multiply(new BigDecimal(invTxn.quantity));
-            //BigDecimal bdStmtTax      = bdTot1.multiply(invTxn.tax.divide(new BigDecimal(100)));
-            //BigDecimal bdStmtDiscount = bdTot1.multiply(invTxn.discount);
-            invTxn.stmtTotal   = calculateStatementTotal(invTxn.priceEntry, invTxn.quantity, invTxn.tax, invTxn.discount);
-            
-            //invTxn.stmtTotal   = bdTot1.add(bdStmtTax).subtract(bdStmtDiscount);
-            invTxn.descr       = psDesc;
-            invTxn.uiSessionid = Long.parseLong(psSessionId.substring(0,19));
-
-            //Calculate Quantity Total
-
-            //int iTotal = calculateTotalQuantity(psOptions);
-
-            long lInvAccUId = pem.persist(invTxn);
-
-            // get brand current balance
-            // get item  current quantity
-
-            return lInvAccUId;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static BigDecimal calculateStatementTotal(BigDecimal pPriceEntry, 
-                                                     int pQuantity, 
-                                                     BigDecimal pTax, 
-                                                     BigDecimal pDiscount)
-    {
-        
-        BigDecimal bdTot1         = pPriceEntry.multiply(new BigDecimal(pQuantity));
-        BigDecimal bdStmtDiscount = bdTot1.multiply(pDiscount.divide(new BigDecimal(100)));
-        BigDecimal bdStmtTax      = bdTot1.subtract(bdStmtDiscount).multiply(pTax.divide(new BigDecimal(100)));
-
-        bdTot1 = bdTot1.subtract(bdStmtDiscount).add(bdStmtTax);
-
-        return bdTot1;
-    }
 
     // example = {"Group 1":{"green":18,"blue":-1}}
     public static ArrayList<ssoItemOption> getItemOptions(String psOptions)
@@ -518,60 +421,6 @@ public final class InventoryOps
         }
     }
     
-    public static ssoInventoryParams registerNewBrandNCodeNCategory(EntityManager  pem,
-                                                                    long           pUserId,
-                                                                    long           pAccountId,
-                                                                    String         pBrandName,
-                                                                    String         pItemCode,
-                                                                    String         pCategory) throws Exception
-    {
-        String sItemCode     = "";
-        String sCategoryCode = "";
-        
-        ssoInventoryParams InvParams = new ssoInventoryParams();
-        
-        try
-        {
-
-            StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_PRM_MRC_REGISTER_NEW_BRAND_N_CODE_N_CATEGORY");
-
-            SP.registerStoredProcedureParameter("P_ACC_ID"        , Long.class       , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_BRAND_NAME"    , String.class     , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_ITEM_CODE"     , String.class     , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_CATEGORY"      , String.class     , ParameterMode.IN);
-
-            int Colindex = 1;
-            SP.SetParameter(Colindex++, pAccountId          , "P_ACC_ID");
-            SP.SetParameter(Colindex++, pBrandName          , "P_BRAND_NAME");
-            SP.SetParameter(Colindex++, pItemCode           , "P_ITEM_CODE");
-            SP.SetParameter(Colindex++, pCategory           , "P_CATEGORY");
-
-            SP.execute();
-
-            List<List<RowColumn>> rs =  SP.getResultList();
-
-            if (rs.size()>0)
-            {
-                List<RowColumn> RowN = rs.get(0);
-
-                sItemCode     = Util.Database.getValString(RowN, "UID_ITEM_CODE");
-                sCategoryCode = Util.Database.getValString(RowN, "UID_CATEGORY_CODE");
-                
-                InvParams.itemUID = Long.parseLong(sItemCode);
-                InvParams.categoryUID = Long.parseLong(sCategoryCode);
-
-            }
-
-            return InvParams;
-            
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-
-    }
-
     /*
     PRINCIPLE: 
         Options table differs from brand and items table. The options may work with quantity 
@@ -579,15 +428,17 @@ public final class InventoryOps
         ignore affecting the options quantity even though the previous entries for the same 
         options came with a given quantities. It basically dismisses the entry. 
     */
-    public static boolean updateItemOptionsQuantity( EntityManager            pem,
-                                                     long                     pTxnId,
-                                                     SsAccInvBrandItemCodes   pBrandItem,
+    public static boolean updateItemOptionsStats(    EntityManager            pem,
+                                                     long                     pBillId,
+                                                     SsAccInvItemStats        pBrandItem,
                                                      ArrayList<ssoItemOption> pOptions,
                                                      String                   pTxnType,
                                                      String                   pQuantity,
                                                      long                     pPrmCategoryId
                                                      ) throws Exception
     {
+        SsAccInvOptionStats itemOption = new SsAccInvOptionStats();
+        
         try
         {
             ArrayList<ssoItemOption> aOptions = new ArrayList<ssoItemOption>();
@@ -597,23 +448,27 @@ public final class InventoryOps
             // read option quantity
             // update it
             // add log 
-            SsAccInvBrandItemOptions itemOption = new SsAccInvBrandItemOptions();
+            
 
-            if(pOptions.size()==0)
+            if(pOptions.size()==0)// NO OPTION ENTERED
             {
                 //entry without options so then run it once for empty
                 ssoItemOption noOption = new ssoItemOption();
                 noOption.optionName = "";
                 noOption.groupName  = "";
-                if ((pTxnType.equals(gTXNTYPE_KEY_NEW_ITEM)==true) || (pTxnType.equals(gTXNTYPE_KEY_EXISTING_ITEM)==true))
+                //if ( (pTxnType.equals(InventoryStatement.INV_NEW_ITEM)==true) || 
+                //     (pTxnType.equals(InventoryStatement.INV_EXISTING_ITEM)==true) )
+                if ( (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true) || 
+                     (pTxnType.equals(txnDefs.TXN_TYPE_INV_UPDATE)==true) )
                 {
                     noOption.quantity   = pQuantity;//Integer.toString(pBrandItem.quantityEntered);
                 }
-                else if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
+                //else if (pTxnType.equals(InventoryStatement.INV_RETURN_ITEM)==true)
+                else if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
                 {
                     noOption.quantity   = pQuantity;//Integer.toString(pBrandItem.quantityReturned);
-                }   
-                
+                }
+
                 aOptions.add(noOption);
             }
             else
@@ -621,20 +476,147 @@ public final class InventoryOps
                 aOptions.addAll(pOptions);
             }
 
+            //-----------------------------------------------------------------
+            // COLLECT GROUP NAMES WITH OPTIONS
+            //-----------------------------------------------------------------
+            ArrayList<String> optGroups = new ArrayList<String>();
+            ArrayList<ssoItemOptionZipped> optGroupsZipped = new ArrayList<ssoItemOptionZipped>();
+
+            // Distincted
+            optGroups = filterGroups(aOptions);
+            for(String groupN: optGroups)
+            {
+                String sGroupJSON = prepareGroupOptionsasJSON(groupN, aOptions);
+
+                ssoItemOptionZipped optGroupZip = new ssoItemOptionZipped();
+                optGroupZip.groupName = groupN;
+                optGroupZip.options = sGroupJSON;
+                optGroupsZipped.add(optGroupZip);
+            }
+
+            //-----------------------------------------------------------------
+            // SAVE 2 DB 
+            //-----------------------------------------------------------------
+            for(String groupN: optGroups)
+            {
+                groupN = groupN.toLowerCase();
+
+                Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.findByItemCodeOptions", SsAccInvOptionStats.class);
+
+                int index = 1;
+                stmtFamily.SetParameter(index++, pBrandItem.accountId       , "ACCOUNT_ID");
+                stmtFamily.SetParameter(index++, pBrandItem.vendorId        , "VENDOR_ID");
+                stmtFamily.SetParameter(index++, pBrandItem.uid             , "ITEM_CODE_ID");//uid
+                stmtFamily.SetParameter(index++, groupN.toLowerCase().trim(), "OPTION_GROUP");//uid
+
+                List<SsAccInvOptionStats> rs = stmtFamily.getResultList(SsAccInvOptionStats.class);
+
+                if(rs.size()>0)
+                {
+                    itemOption = rs.get(0);
+
+                    bNewItemOption = false;
+                }
+                else
+                {
+                    bNewItemOption = true;
+                }
+
+                String sOptions = getGroupOptionsasJSON(groupN, optGroupsZipped);
+                if (bNewItemOption == true)
+                {
+                    //----------------------------------------------------------
+                    //  first time - new record
+                    //----------------------------------------------------------
+                    bNewItemOption = true;
+
+                    itemOption.accountId        = pBrandItem.accountId;
+                    itemOption.vendorId         = pBrandItem.vendorId;
+                    itemOption.itemCodeId       = pBrandItem.uid;//uid == itemcode
+                    itemOption.prmCategoryId    = pPrmCategoryId;
+                    itemOption.optionGroup      = groupN;
+                    itemOption.itemOptGroupHashMd5 = Util.crypto.md5.calculate(groupN.trim() + Long.toString(itemOption.itemCodeId).trim());
+
+                    //if ( (pTxnType.equals(InventoryStatement.INV_NEW_ITEM)==true) || 
+                    //     (pTxnType.equals(InventoryStatement.INV_EXISTING_ITEM)==true) )
+                    if ( (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true) || 
+                         (pTxnType.equals(txnDefs.TXN_TYPE_INV_UPDATE)==true) )
+                    {
+                        // NEW ENTRY or EXISTING ITEM
+                        itemOption.optionsEntered  = sOptions;
+                        itemOption.optionsReturned = "{}";
+                        itemOption.optionsSold     = "{}";
+                        itemOption.optionsRefund   = "{}";
+                        
+                        itemOption.optionsAdjMinus = "{}";
+                        itemOption.optionsAdjPlus  = "{}";
+                        
+                        itemOption.optionsRevolvingEntered  = "{}";
+                        itemOption.optionsRevolvingReturned = "{}";
+                        itemOption.optionsRevolvingSold     = "{}";
+                        itemOption.optionsRevolvingRefund   = "{}";
+                        
+                        itemOption.optionsRevolvingAdjMinus = "{}";
+                        itemOption.optionsRevolvingAdjPlus  = "{}";
+
+                    }
+                    //else if (pTxnType.equals(InventoryStatement.INV_RETURN_ITEM)==true)
+                    else if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
+                    {
+                        // RETURNING ITEM 
+                        itemOption.optionsEntered   = "{}";
+                        itemOption.optionsReturned  = sOptions;
+                        itemOption.optionsReturned = "{}";
+                        itemOption.optionsSold     = "{}";
+                        itemOption.optionsRefund   = "{}";
+                        itemOption.optionsAdjMinus = "{}";
+                        itemOption.optionsAdjPlus  = "{}";
+
+                        itemOption.optionsRevolvingEntered  = "{}";
+                        itemOption.optionsRevolvingReturned = "{}";
+                        itemOption.optionsRevolvingSold     = "{}";
+                        itemOption.optionsRevolvingRefund   = "{}";
+                        itemOption.optionsRevolvingAdjMinus = "{}";
+                        itemOption.optionsRevolvingAdjPlus  = "{}";
+
+                    }
+
+                    pem.persist(itemOption);
+                }
+                else
+                {
+                    // UPDATE STATS
+                    updateOptionStats(  pem, 
+                                        pBrandItem.accountId, 
+                                        pBrandItem.vendorId, 
+                                        pBrandItem.uid,
+                                        groupN,
+                                        sOptions,
+                                        pTxnType
+                                        );
+                    
+                }
+
+                // update here (THIS IS IF NOT A NEW ITEM -> IF NEW ITEM IT IS ADDED IN THE LINES ABOVE)
+                //commit2DB_ItemOptionQuantity(pem, itemOption);
+            }
+
+            
+            /*
             for(ssoItemOption optN:aOptions)
             {
 
-                Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.findByAccIdNBrandIdNItemCodeNOptions", SsAccInvBrandItemOptions.class);
+                Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.findByAccIdNBrandIdNItemCodeNOptions", SsAccInvOptionStats.class);
 
                 int index = 1;
                 stmtFamily.SetParameter(index++, pBrandItem.accountId      , "ACCOUNT_ID");
-                stmtFamily.SetParameter(index++, pBrandItem.brandId        , "BRAND_ID");
+                stmtFamily.SetParameter(index++, pBrandItem.vendorId       , "BRAND_ID");
                 stmtFamily.SetParameter(index++, pBrandItem.uid            , "ITEM_CODE");//uid
                 stmtFamily.SetParameter(index++, optN.groupName            , "OPTION_1");
                 stmtFamily.SetParameter(index++, optN.optionName           , "OPTION_2");
                 stmtFamily.SetParameter(index++, ThisYear                  , "FINANCIAL_YEAR");
 
-                List<SsAccInvBrandItemOptions> rs = stmtFamily.getResultList(SsAccInvBrandItemOptions.class);
+                List<SsAccInvOptionStats> rs = stmtFamily.getResultList(SsAccInvOptionStats.class);
 
                 if(rs.size()>0)
                 {
@@ -647,14 +629,16 @@ public final class InventoryOps
                     bNewItemOption = true;
 
                     itemOption.accountId = pBrandItem.accountId;
-                    itemOption.brandId   = pBrandItem.brandId;
+                    itemOption.vendorId   = pBrandItem.vendorId;
                     itemOption.itemCodeId= pBrandItem.uid;//uid == itemcode
                     itemOption.prmCategoryId  = pPrmCategoryId;
-                    itemOption.option1   = optN.groupName;
+                    itemOption.optionGroup   = optN.groupName;
                     itemOption.option2   = optN.optionName;
-                    
+
                     if ((pTxnType.equals(gTXNTYPE_KEY_NEW_ITEM)==true) || (pTxnType.equals(gTXNTYPE_KEY_EXISTING_ITEM)==true))
+                    {
                         itemOption.quantityEntered  = Integer.parseInt(optN.quantity);
+                    }
 
                     if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
                         itemOption.quantityReturned  = Integer.parseInt(optN.quantity);
@@ -664,32 +648,7 @@ public final class InventoryOps
 
                     pem.persist(itemOption);
                 }
-
-                SsAccInvBrandItemOptionsLog brndItemOptLog = new SsAccInvBrandItemOptionsLog();
-                brndItemOptLog.accountId          = itemOption.accountId;
-                brndItemOptLog.itemCodeId         = itemOption.itemCodeId;
-                brndItemOptLog.option1            = itemOption.option1;
-                brndItemOptLog.option2            = itemOption.option2;
-                brndItemOptLog.txnType            = pTxnType;
-                brndItemOptLog.txnId              = pTxnId;
-                brndItemOptLog.financialYear      = itemOption.financialYear;
-                brndItemOptLog.revolvingQuantity  = itemOption.revolvingQuantity;
-                if (bNewItemOption==true)
-                {
-                    brndItemOptLog.oldQuantityEntered = 0;
-                    brndItemOptLog.oldQuantitySold    = 0;
-                    brndItemOptLog.oldQuantityReturned= 0;
-                }
-                else
-                {
-                    brndItemOptLog.oldQuantityEntered = itemOption.quantityEntered;
-                    brndItemOptLog.oldQuantitySold    = itemOption.quantitySold;
-                    brndItemOptLog.oldQuantityReturned= itemOption.quantityReturned;
-                }
-                //brndItemOptLog.newQuantityEntered = itemOption.quantityEntered;
-                //brndItemOptLog.newQuantitySold    = itemOption.quantitySold;
-
-                //2. Update Quantity
+                
                 if (bNewItemOption!=true)
                 {
                     int iQuantity = Integer.parseInt(optN.quantity);
@@ -704,24 +663,6 @@ public final class InventoryOps
                                 itemOption.quantityEntered = iQuantity;
                             else
                                 itemOption.quantityEntered += iQuantity;
-
-                            // PREPARING LOG
-                            //--------------------------------------------------
-                            if (iQuantity!=-1)
-                            {
-                                if (itemOption.quantityEntered==-1)
-                                    brndItemOptLog.newQuantityEntered = iQuantity;
-                                else
-                                    brndItemOptLog.newQuantityEntered = itemOption.quantityEntered;// + iQuantity;
-                            }
-                            else
-                            {
-                                //means ignored
-                                brndItemOptLog.newQuantityEntered = itemOption.quantityEntered;
-                            }
-                            
-                            brndItemOptLog.newQuantityReturned = itemOption.quantityReturned;
-                            brndItemOptLog.newQuantitySold     = itemOption.quantitySold;
                         }
                         else if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
                         {
@@ -732,54 +673,18 @@ public final class InventoryOps
                             else
                                 itemOption.quantityReturned += iQuantity;
 
-                            // PREPARING LOG
-                            //--------------------------------------------------
-                            // N / A
-                            // No change if it is return 
-                            if (iQuantity!=-1)
-                            {
-                                if (itemOption.quantityEntered==-1)
-                                    brndItemOptLog.newQuantityReturned = iQuantity;
-                                else
-                                    brndItemOptLog.newQuantityReturned = itemOption.quantityReturned;// + iQuantity;
-                            }
-                            else
-                            {
-                                //means ignored
-                                brndItemOptLog.newQuantityReturned = itemOption.quantityReturned;//keep same
-                            }
-                            
-                            brndItemOptLog.newQuantityEntered  = itemOption.quantityEntered;
-                            brndItemOptLog.newQuantitySold     = itemOption.quantitySold;
-
                         }
 
                         // update here (THIS IS IF NOT A NEW ITEM -> IF NEW ITEM IT IS ADDED IN THE LINES ABOVE)
                         commit2DB_ItemOptionQuantity(pem, itemOption);
-                    }
-                    else
-                    {
-                        //don't update the quantity - IGNORE
-                        
-                        // Only update the log - keep stats still
-                        brndItemOptLog.newQuantityReturned= itemOption.quantityReturned;
-                        brndItemOptLog.newQuantityEntered = itemOption.quantityEntered;
-                        brndItemOptLog.newQuantitySold    = itemOption.quantitySold;
 
                     }
+
                 }
-                else
-                {
-                    brndItemOptLog.newQuantityReturned= itemOption.quantityReturned;
-                    brndItemOptLog.newQuantityEntered = itemOption.quantityEntered;
-                    brndItemOptLog.newQuantitySold    = itemOption.quantitySold;
-                }
-                
-                // add Log
-                pem.persist(brndItemOptLog);
-                
+
             }// end of for
- 
+            */
+            
             return true;
         }
         catch(Exception e)
@@ -788,20 +693,91 @@ public final class InventoryOps
         }
     }
 
+    public static String getGroupOptionsasJSON(String pGroupName, ArrayList<ssoItemOptionZipped> paGroupOptsZipped)
+    {
+        for(ssoItemOptionZipped groupN: paGroupOptsZipped)
+        {
+            if (groupN.groupName.equals(pGroupName)==true)
+            {
+                return groupN.options;
+            }
+        }
+        
+        return "{}";
+    }
+
+    public static ArrayList<String> filterGroups(ArrayList<ssoItemOption> paOptions)
+    {
+        ArrayList<String> optGroups = new ArrayList<String> ();
+        boolean bFound = true;
+
+        for (ssoItemOption optN: paOptions)
+        {
+            bFound = false;
+            //Check if found
+            for(String groupN: optGroups)
+            {
+                if (groupN.equals(optN.groupName)==true)
+                {
+                    bFound = true;
+                    break;
+                }
+            }
+
+            if (bFound==false)
+            {
+                optGroups.add(optN.groupName);
+            }
+        }
+        
+        return optGroups;
+    }
+
+    public static String prepareGroupOptionsasJSON(String pGroup, ArrayList<ssoItemOption> paOptions)
+    {
+        ArrayList<ssoItemOption> groupOpts = new ArrayList<ssoItemOption>();
+
+        for(ssoItemOption optionN: paOptions)
+        {
+            if(optionN.groupName.equals(pGroup)==true)
+            {
+                groupOpts.add(optionN);
+            }
+        }
+
+        String sOptJSON = "{";
+        int i =0;
+        for(ssoItemOption optionN: groupOpts)
+        {
+            if (i>0)
+                sOptJSON += ",";
+
+            sOptJSON += "\"" + optionN.optionName + "\"" + ":" + Util.Str.ifEmpty(optionN.quantity,"-1");
+            i++;
+        }
+        sOptJSON += "}";
+
+        return sOptJSON;
+    }
+
     public static long addItemPrice(EntityManager pem,
-                                    long          pTxnId,
+                                    long          pBillId,
                                     long          pAccId,
+                                    long          pBrandId,
+                                    String        pItemCode,
                                     String        pEntryPrice,
                                     String        pDiscount,
                                     String        pTax,
                                     String        pSalesPrice) throws Exception
     {
-        SsAccInvBrandItemPrice itemPrice = new SsAccInvBrandItemPrice();
+        SsAccInvItemPrice itemPrice = new SsAccInvItemPrice();
 
         try
         {
             itemPrice.accountId  = pAccId;
-            itemPrice.txnId      = pTxnId;
+            itemPrice.billId     = pBillId;
+            itemPrice.brandId    = pBrandId;
+            itemPrice.itemCode   = pItemCode;
             itemPrice.entryPrice = new BigDecimal(pEntryPrice);
             itemPrice.discount   = new BigDecimal(pDiscount);
             itemPrice.tax        = new BigDecimal(pTax);
@@ -817,22 +793,48 @@ public final class InventoryOps
         }
     }
 
-    public static void commit2DB_ItemOptionQuantity(EntityManager               pem,
-                                                    SsAccInvBrandItemOptions    pItemOption) throws Exception
+    public static void updateOptionStats(EntityManager  pem,
+                                         long           pAccId,
+                                         long           pVendorId,
+                                         long           pItemCodeId,
+                                         String         pOptGroup,
+                                         String         pOptions,
+                                         String         pTxnType
+                                         ) throws Exception
     {
         try
         {
-            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.updateQuantity", SsAccInvBrandItemOptions.class);
+            String sOptions = pOptions;
+            
+            if(pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true)
+            {
+                sOptions = "{" + Util.Str.QUOTE("received") + ":" + "{" + Util.Str.QUOTE(pOptGroup) + ":" + pOptions + "}" + "}";
+            }
+            else if(pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
+            {
+                sOptions = "{" + Util.Str.QUOTE("returned") + ":" + "{" + Util.Str.QUOTE(pOptGroup) + ":" + pOptions + "}" + "}";
+            }
+
+            StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_INV_UPDATE_OPTION_N_STATS");
+
+            SP.registerStoredProcedureParameter("ACCOUNT_ID"    , Long.class       , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("VENDOR_ID"     , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("ITEM_CODE_ID"  , Long.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("GROUP"         , String.class     , ParameterMode.IN);
+            SP.registerStoredProcedureParameter("OPTIONS"       , String.class     , ParameterMode.IN);
+            //SP.registerStoredProcedureParameter("TXN_TYPE"      , String.class     , ParameterMode.IN);
 
             int index = 1;
-            stmtFamily.SetParameter(index++, pItemOption.quantityEntered    , "QUANTITY_ENTERED");
-            stmtFamily.SetParameter(index++, pItemOption.quantityReturned   , "QUANTITY_RETURNED");
-            stmtFamily.SetParameter(index++, pItemOption.quantitySold       , "QUANTITY_SOLD");
-            stmtFamily.SetParameter(index++, pItemOption.accountId          , "BYUSER");
-            stmtFamily.SetParameter(index++, pItemOption.uid                , "UID");
+            SP.SetParameter(index++, pAccId         , "ACCOUNT_ID");
+            SP.SetParameter(index++, pVendorId      , "VENDOR_ID");
+            SP.SetParameter(index++, pItemCodeId    , "ITEM_CODE_ID");
+            SP.SetParameter(index++, pOptGroup      , "GROUP");
+            SP.SetParameter(index++, sOptions       , "OPTIONS");
+            //SP.SetParameter(index++, pTxnType       , "TXN_TYPE");
 
-            stmtFamily.executeUpdate();
+            SP.execute();
 
+            return ;
         }
         catch(Exception e)
         {
@@ -840,15 +842,40 @@ public final class InventoryOps
         }
     }
 
-    public static SsAccInvBrandItemCodes updateItemInfo(EntityManager   pem,
-                                                        long            pTxnId,
-                                                        String          pTxnType,
-                                                        long            pAccountId, 
-                                                        long            pBrandId,
-                                                        String          pItemCode,
-                                                        String          pQuantity,
-                                                        long            pPrmCategoryId,
-                                                        long            pPriceId) throws Exception
+    /*
+    public static void commit2DB_ItemOptionQuantity(EntityManager               pem,
+                                                    SsAccInvOptionStats    pItemOption) throws Exception
+    {
+        try
+        {
+            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.updateStats", SsAccInvOptionStats.class);
+
+            int index = 1;
+            stmtFamily.SetParameter(index++, pItemOption.optionsEntered     , "OPTIONS_ENTERED");
+            stmtFamily.SetParameter(index++, pItemOption.optionsReturned    , "OPTIONS_RETURNED");
+            stmtFamily.SetParameter(index++, pItemOption.optionsSold        , "OPTIONS_SOLD");
+            stmtFamily.SetParameter(index++, pItemOption.accountId          , "BYUSER");
+            stmtFamily.SetParameter(index++, pItemOption.uid                , "UID");
+
+            stmtFamily.executeUpdate();
+        }
+        catch(Exception e)
+        {
+            throw e;
+        }
+    }
+    */
+    /* 
+    public static SsAccInvItemStats updateItemStats(EntityManager   pem,
+                                                    long            pBillId,
+                                                    String          pTxnType,
+                                                    long            pAccountId, 
+                                                    long            pBrandId,
+                                                    String          pItemCode,
+                                                    String          pQuantity,
+                                                    long            pPrmCategoryId,
+                                                    long            pPriceId,
+                                                    String          pSalesPrice) throws Exception
     {
         try
         {
@@ -856,104 +883,77 @@ public final class InventoryOps
             int iOldQuantity = 0;
 
             int ThisYear = Integer.parseInt(Util.DateTime.GetDateTime_s().substring(0, 4));
-            // 1. get curret quantity 
+            // 1. get curret quantity
             // 2. update it
             // 3. add log
-            SsAccInvBrandItemCodes brndItem = new SsAccInvBrandItemCodes();
+            SsAccInvItemStats brndItem = new SsAccInvItemStats();
 
-            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemCodes.findByAccIdNBrandNItemCode", SsAccInvBrandItemCodes.class);
+            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemCodes.findByAccIdNBrandNItemCode", SsAccInvItemStats.class);
 
             int index = 1;
             stmtFamily.SetParameter(index++, pAccountId, "ACCOUNT_ID");
-            stmtFamily.SetParameter(index++, pBrandId  , "BRAND_ID");
+            stmtFamily.SetParameter(index++, pBrandId  , "VENDOR_ID");
             stmtFamily.SetParameter(index++, pItemCode , "ITEM_CODE");
-            stmtFamily.SetParameter(index++, ThisYear  , "FINANCIAL_YEAR");
+            //stmtFamily.SetParameter(index++, ThisYear  , "FINANCIAL_YEAR");
 
-            List<SsAccInvBrandItemCodes> rs = stmtFamily.getResultList(SsAccInvBrandItemCodes.class);
+            List<SsAccInvItemStats> rs = stmtFamily.getResultList(SsAccInvItemStats.class);
 
             if(rs.size()>0)
             {
                 brndItem = rs.get(0);
-                
+
                 bNewBrandItem = false;
             }
             else
             {
                 bNewBrandItem = true;
-                
-                // insert new with 0 quantity
-                brndItem.accountId = pAccountId;
-                brndItem.brandId   = pBrandId;
-                brndItem.itemCode  = pItemCode;
-                brndItem.prmCategoryId  = pPrmCategoryId;
-                brndItem.priceId   = pPriceId;
-                brndItem.financialYear = ThisYear;
-                
-                brndItem.quantitySold = 0;
-                if ((pTxnType.equals(gTXNTYPE_KEY_NEW_ITEM)==true) || (pTxnType.equals(gTXNTYPE_KEY_EXISTING_ITEM)==true))
-                    brndItem.quantityEntered  = Integer.parseInt(pQuantity);
-                else if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
-                    brndItem.quantityReturned = Integer.parseInt(pQuantity);
 
+                // insert new with 0 quantity
+                brndItem.accountId     = pAccountId;
+                brndItem.vendorId      = pBrandId;
+                brndItem.itemCode      = pItemCode;
+                brndItem.prmCategoryId = pPrmCategoryId;
+                brndItem.priceId       = pPriceId;
+                brndItem.financialYear = ThisYear;
+                brndItem.lastSalePrice = new BigDecimal(pSalesPrice);
+
+                brndItem.quantitySold = new BigDecimal(0);
+                if ((pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true) || (pTxnType.equals(txnDefs.TXN_TYPE_INV_UPDATE)==true))
+                    brndItem.quantityEntered  = new BigDecimal(Integer.parseInt(pQuantity));
+                else if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
+                    brndItem.quantityReturned = new BigDecimal(Integer.parseInt(pQuantity));
+                
+                //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // CREATING NEW BRAND ITEM 
+                //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 brndItem.uid = pem.persist(brndItem);
             }
             brndItem.priceId = pPriceId;//update the price info always
 
-            SsAccInvBrandItemCodesLog brndItemLog = new SsAccInvBrandItemCodesLog();
-            brndItemLog.accountId   = brndItem.accountId;
-            brndItemLog.brandId     = brndItem.brandId;
-            brndItemLog.itemCode    = brndItem.itemCode;
-            brndItemLog.txnId       = pTxnId;
-            brndItemLog.txnType     = pTxnType;
-            brndItemLog.priceId     = pPriceId;
-            brndItemLog.revolvingQuantity = brndItem.revolvingQuantity;
-
-            if(bNewBrandItem==true)
-            {
-                brndItemLog.oldQuantityEntered  = 0;
-                brndItemLog.oldQuantityReturned = 0;
-                brndItemLog.oldQuantitySold     = 0;
-            }
-            else
-            {
-                brndItemLog.oldQuantityEntered  = brndItem.quantityEntered;
-                brndItemLog.oldQuantityReturned = brndItem.quantityReturned;
-                brndItemLog.oldQuantitySold     = brndItem.quantitySold;
-            }
-
-            //2. update if not new 
-            //-----------------------------------------------------------------
-            if ((pTxnType.equals(gTXNTYPE_KEY_NEW_ITEM)==true) || (pTxnType.equals(gTXNTYPE_KEY_EXISTING_ITEM)==true))
+            if ((pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true) || (pTxnType.equals(txnDefs.TXN_TYPE_INV_UPDATE)==true))
             {
                 if (bNewBrandItem!=true)
-                    brndItem.quantityEntered += Integer.parseInt(pQuantity);
-
-                brndItemLog.newQuantityEntered = brndItem.quantityEntered;
-                brndItemLog.newQuantityReturned= brndItem.quantityReturned;
-                brndItemLog.newQuantitySold    = brndItem.quantitySold;
+                {
+                    brndItem.quantityEntered = brndItem.quantityEntered.add(new BigDecimal(Integer.parseInt(pQuantity)));
+                    //brndItem.quantityEntered += new BigDecimal(Integer.parseInt(pQuantity));
+                }
             }
-            else if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
+            else if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
             {
-                //return 
                 if (bNewBrandItem!=true)
-                    brndItem.quantityReturned += Integer.parseInt(pQuantity);
-
-                brndItemLog.newQuantityReturned = brndItem.quantityReturned;
-                brndItemLog.newQuantityEntered  = brndItem.quantityEntered;
-                brndItemLog.newQuantitySold     = brndItem.quantitySold;
+                {
+                    brndItem.quantityReturned = brndItem.quantityReturned.add(new BigDecimal(Integer.parseInt(pQuantity)));
+                    //brndItem.quantityReturned += new BigDecimal(Integer.parseInt(pQuantity));
+                }
             }
-            
+
+            brndItem.lastSalePrice = new BigDecimal(pSalesPrice);
+
             if (bNewBrandItem!=true)
             {
                 // update ITEM
                 commit2DB_BrandItemInfo(pem, brndItem);
             }
-
-            //3. add log
-            //-----------------------------------------------------------------
-            //brndItemLog.newQuantity = brndItem.quantity;
-
-            brndItemLog.uid = pem.persist(brndItemLog);
 
             return brndItem;
         }
@@ -962,18 +962,20 @@ public final class InventoryOps
             throw e;
         }
     }
+    */
 
     public static void commit2DB_BrandItemInfo(EntityManager          pem, 
-                                               SsAccInvBrandItemCodes pBrandItem) throws Exception
+                                               SsAccInvItemStats pBrandItem) throws Exception
     {
         try
         {
-            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemCodes.updateItem", SsAccInvBrandItemCodes.class);
+            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemCodes.updateItem", SsAccInvItemStats.class);
 
             int index = 1;
             stmtFamily.SetParameter(index++, pBrandItem.quantityEntered             , "QUANTITY_ENTERED");
             stmtFamily.SetParameter(index++, pBrandItem.quantityReturned            , "QUANTITY_RETURNED");
             stmtFamily.SetParameter(index++, pBrandItem.priceId                     , "PRICE_ID");
+            stmtFamily.SetParameter(index++, pBrandItem.lastSalePrice               , "LAST_SALE_PRICE");
             stmtFamily.SetParameter(index++, pBrandItem.accountId                   , "BYUSER");
             stmtFamily.SetParameter(index++, pBrandItem.uid                         , "UID");
 
@@ -990,115 +992,122 @@ public final class InventoryOps
         }
     }
 
-    public static SsAccInvBrands updateBrandBalance(EntityManager   pem, 
-                                                    long            pTxnId,
-                                                    String          pTxnType,
-                                                    long            pAccountId, 
-                                                    String          pBrand,
-                                                    String          pQuantity, 
-                                                    String          pEntryPrice, 
-                                                    String          pDiscount,
-                                                    String          pTax) throws Exception
+    public static SsAccInvVendorStats updateBrandBalance(   EntityManager       pem,
+                                                            long                pTxnId,
+                                                            String              pTxnType,                                                            
+                                                            long                pAccountId,
+                                                            long                pBrandId,
+                                                            ssoBillTotals  pStmtTotals
+                                                            ) throws Exception
     {
+        boolean bNewStatsRecord4Branch = false;
+
         try
         {
+            pem.flush();
+            
             boolean bBrandAccExist = true;
-            SsAccInvBrands brandAcc = new SsAccInvBrands();
-            SsAccInvBrandsLog brandLog = new SsAccInvBrandsLog();
+            SsAccInvVendorStats brandAcc = new SsAccInvVendorStats();
+            //SsAccInvBrandsLog brandLog = new SsAccInvBrandsLog();
 
             int ThisYear = Integer.parseInt(Util.DateTime.GetDateTime_s().substring(0, 4));
-            Query stmtFamily = pem.createNamedQuery("SsAccInvBrands.findByAccIdNBrand", SsAccInvBrands.class);
+            Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemCodes.findVendorStats", SsAccInvItemStats.class);
 
             int index = 1;
             stmtFamily.SetParameter(index++, pAccountId, "ACCOUNT_ID");
-            stmtFamily.SetParameter(index++, pBrand    , "BRAND");
-            stmtFamily.SetParameter(index++, ThisYear  , "FINANCIAL_YEAR");
+            stmtFamily.SetParameter(index++, pBrandId  , "VENDOR_ID");
+            //stmtFamily.SetParameter(index++, ThisYear  , "FINANCIAL_YEAR");
 
-            List<SsAccInvBrands> rs = stmtFamily.getResultList(SsAccInvBrands.class);
-
+            //List<SsAccInvVendorStats> rs = stmtFamily.getResultList(SsAccInvVendorStats.class);
+            /*
             if(rs.size()>0)
             {
                 brandAcc = rs.get(0);
             }
             else
             {
-                // create new brand balance
-                bBrandAccExist = false;
-                brandAcc.financialYear = ThisYear;
+                // If falls here, it means brand has defined but the stats are not created for vendor for this BRANCH
+                bNewStatsRecord4Branch = true;
+            }
+            */
+
+            List<List<RowColumn>> rs =  stmtFamily.getResultList();
+
+            if (rs.size()>0)
+            {
+                List<RowColumn> RowN = rs.get(0);
+
+                brandAcc.quantityEntered        = new BigDecimal(Util.Database.getValString(RowN, "QUANTITY_ENTERED"));
+                brandAcc.netTotalEntered        = new BigDecimal(Util.Database.getValString(RowN, "NET_TOTAL_ENTERED"));
+                brandAcc.discountTotalEntered   = new BigDecimal(Util.Database.getValString(RowN, "DISCOUNT_TOTAL_ENTERED"));
+                brandAcc.surchargeTotalEntered  = new BigDecimal(Util.Database.getValString(RowN, "SURCHARGE_TOTAL_ENTERED"));
+                brandAcc.taxTotalEntered        = new BigDecimal(Util.Database.getValString(RowN, "TAX_TOTAL_ENTERED"));
+                brandAcc.grossTotalEntered      = new BigDecimal(Util.Database.getValString(RowN, "GROSS_TOTAL_ENTERED"));
+                
+                brandAcc.quantityReturned        = new BigDecimal(Util.Database.getValString(RowN, "QUANTITY_RETURNED"));
+                brandAcc.netTotalReturned        = new BigDecimal(Util.Database.getValString(RowN, "NET_TOTAL_RETURNED"));
+                brandAcc.discountTotalReturned   = new BigDecimal(Util.Database.getValString(RowN, "DISCOUNT_TOTAL_RETURNED"));
+                brandAcc.surchargeTotalReturned  = new BigDecimal(Util.Database.getValString(RowN, "SURCHARGE_TOTAL_RETURNED"));
+                brandAcc.taxTotalReturned        = new BigDecimal(Util.Database.getValString(RowN, "TAX_TOTAL_RETURNED"));
+                brandAcc.grossTotalReturned      = new BigDecimal(Util.Database.getValString(RowN, "GROSS_TOTAL_RETURNED"));
+
             }
 
-            // brand acount
-            BigDecimal stmtTotal = new BigDecimal(BigInteger.ZERO);
-            int iQuantity = Integer.parseInt(pQuantity);
-            brandAcc.brand = pBrand;
-            brandAcc.accountId = pAccountId;
+            brandAcc.vendorId   = pBrandId;
+            brandAcc.accountId  = pAccountId;
 
-            // brand account log
-            brandLog.accountId = pAccountId;
-            brandLog.brand     = pBrand;
-            brandLog.txnId     = pTxnId;
-            brandLog.txnType   = pTxnType;
-            
-            if (brandAcc.balanceEntered==null)
-                brandAcc.balanceEntered = BigDecimal.ZERO;
-            if (brandAcc.balanceReturned==null)
-                brandAcc.balanceReturned = BigDecimal.ZERO;
-            if (brandAcc.balanceSold==null)
-                brandAcc.balanceSold = BigDecimal.ZERO;
-            if (brandAcc.revolvingBalance==null)
-                brandAcc.revolvingBalance = BigDecimal.ZERO;
-            
-            brandLog.financialYear      = brandAcc.financialYear;
-            brandLog.revolvingQuantity  = brandAcc.revolvingQuantity;
-            brandLog.revolvingBalance   = brandAcc.revolvingBalance;
-            
-            brandLog.oldBalanceEntered  = brandAcc.balanceEntered;
-            brandLog.oldBalanceReturned = brandAcc.balanceReturned;
-            brandLog.oldBalanceSold     = brandAcc.balanceSold;
-            brandLog.oldQuantityEntered = brandAcc.quantityEntered;
-            brandLog.oldQuantityReturned= brandAcc.quantityReturned;
-            brandLog.oldQuantitySold    = brandAcc.quantitySold;
-            
-            stmtTotal = calculateStatementTotal(new BigDecimal(pEntryPrice), 
-                                                iQuantity, 
-                                                new BigDecimal(pTax), 
-                                                new BigDecimal(pDiscount));
-
-            if (pTxnType.equals(gTXNTYPE_KEY_NEW_ITEM)==true)
+            if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_RECEIVED)==true)
             {
-                // add up to balance and quantity 
-                brandAcc.quantityEntered += iQuantity;
-                brandAcc.balanceEntered = brandAcc.balanceEntered.add(stmtTotal);
+                brandAcc.quantityEntered        = brandAcc.quantityEntered.add(pStmtTotals.Summary.totalQuantity);
+                //brandAcc.grossTotalEntered      = brandAcc.grossTotalEntered.add(pStmtTotals.Lines.totalGross);
+                brandAcc.netTotalEntered        = brandAcc.netTotalEntered.add(pStmtTotals.Lines.totalNet);
+                brandAcc.discountTotalEntered   = brandAcc.discountTotalEntered.add(pStmtTotals.Summary.totalDiscount);
+                brandAcc.surchargeTotalEntered  = brandAcc.surchargeTotalEntered.add(pStmtTotals.Summary.totalSurcharge);
+                brandAcc.taxTotalEntered        = brandAcc.taxTotalEntered.add(pStmtTotals.Bottom.totalTax);
+                brandAcc.grossTotalEntered      = brandAcc.grossTotalEntered.add(pStmtTotals.Bottom.totalGross);
+
+                //brandAcc.balanceFinAdjPlus      = new BigDecimal(BigInteger.ZERO);
+                //brandAcc.balanceFinAdjMinus     = new BigDecimal(BigInteger.ZERO);
+                
+                // balance is auto-generated 22.03.2024
+                //brandAcc.balance                = brandAcc.balance.add(pStmtTotals.Bottom.totalNet);
+                //brandAcc.cumulativeNetTotalEntered   = brandAcc.revolvingNetTotalEntered.add(brandAcc.netTotalEntered);
             }
-            else if (pTxnType.equals(gTXNTYPE_KEY_EXISTING_ITEM)==true)
+            else if (pTxnType.equals(txnDefs.TXN_TYPE_INV_UPDATE)==true)
             {
+                // THIS WON'T AFFECT ANYTHING OTHER THAN QUANTITIES
+                //--------------------------------------------------------
                 // add up only to quantity 
-                brandAcc.quantityEntered += iQuantity;
+                brandAcc.quantityEntered    = brandAcc.quantityEntered.add(pStmtTotals.Summary.totalQuantity);
+                //brandAcc.quantityReturned   = new BigDecimal(BigInteger.ZERO);
+                //brandAcc.quantitySold       = new BigDecimal(BigInteger.ZERO);
             }
-            else if (pTxnType.equals(gTXNTYPE_KEY_RETURN)==true)
+            else if (pTxnType.equals(txnDefs.TXN_TYPE_INVENTORY_SENT)==true)
             {
                 // deduct balance and quantity
-                brandAcc.quantityReturned += iQuantity;
-                brandAcc.balanceReturned  = brandAcc.balanceReturned.add(stmtTotal);
+                brandAcc.quantityReturned       = brandAcc.quantityReturned.add(pStmtTotals.Summary.totalQuantity);
+                //brandAcc.grossTotalReturned     = brandAcc.grossTotalReturned.add(pStmtTotals.Lines.totalGross);
+                brandAcc.netTotalReturned       = brandAcc.netTotalReturned.add(pStmtTotals.Lines.totalNet);
+                brandAcc.discountTotalReturned  = brandAcc.discountTotalReturned.add(pStmtTotals.Summary.totalDiscount);
+                brandAcc.surchargeTotalReturned = brandAcc.surchargeTotalReturned.add(pStmtTotals.Summary.totalSurcharge);
+                brandAcc.taxTotalReturned       = brandAcc.taxTotalReturned.add(pStmtTotals.Bottom.totalTax);
+                
+                brandAcc.grossTotalReturned       = brandAcc.grossTotalReturned.add(pStmtTotals.Bottom.totalGross);
+
+                //brandAcc.balanceFinAdjPlus      = new BigDecimal(BigInteger.ZERO);
+                //brandAcc.balanceFinAdjMinus     = new BigDecimal(BigInteger.ZERO);
+
+                // balance is auto-generated
+                //brandAcc.balance                = brandAcc.balance.subtract(pStmtTotals.Bottom.totalNet);
+                //brandAcc.cumulativeReturned     = brandAcc.cumulativeReturned.add(brandAcc.netTotalReturned);
+                //brandAcc.cumulativeTotalReturned  = brandAcc.revolvingNetTotalReturned.add(brandAcc.netTotalReturned);
             }
 
-            if(bBrandAccExist==true)
-                commit2DB_BrandAcc(pem, brandAcc);
+            if (bNewStatsRecord4Branch==true)
+                pem.persist(brandAcc);
             else
-                brandAcc.uid = pem.persist(brandAcc);
+                VendorOps.update_VendorStats(pem, pTxnType, brandAcc);
 
-            //if it is existing item should not affect the balance
-            brandLog.newBalanceEntered  = brandAcc.balanceEntered;
-            brandLog.newBalanceReturned = brandAcc.balanceReturned;
-            brandLog.newBalanceSold     = brandAcc.balanceSold;
-
-            //log
-            brandLog.newQuantityEntered = brandAcc.quantityEntered;
-            brandLog.newQuantityReturned= brandAcc.quantityReturned;
-            brandLog.newQuantitySold    = brandAcc.quantitySold;
-
-            long UIDLog = pem.persist(brandLog);
-            
             return brandAcc;
         }
         catch(Exception e)
@@ -1106,442 +1115,7 @@ public final class InventoryOps
             throw e;
         }
     }
-
-    public static boolean commit2DB_BrandAcc(EntityManager   pem, SsAccInvBrands pBrandAcc) throws Exception
-    {
-        try
-        {
-            Query stmtBrandAcc = pem.createNamedQuery("SsAccInvBrands.updateBrandAcc", SsAccInvBrands.class);
-
-            int index = 1;
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.quantityEntered  , "Q_ENTERED");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.balanceEntered   , "B_ENTERED");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.quantityReturned , "Q_RETURNED");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.balanceReturned  , "B_RETURNED");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.quantitySold     , "Q_SOLD");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.balanceSold      , "B_SOLD");
-            stmtBrandAcc.SetParameter(index++, Long.toString(pBrandAcc.accountId)      , "BY_USER");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.accountId        , "ACCOUNT_ID");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.brand            , "BRAND");
-            stmtBrandAcc.SetParameter(index++, pBrandAcc.financialYear    , "BRAND");
-
-            stmtBrandAcc.executeUpdate();
-            
-            return true;
-        
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static long addNewBrandItem(EntityManager  pem,
-                                          long            pAccountId,
-                                          String          pBrand,
-                                          String          pItemCode,
-                                          long            pAccBrandId,
-                                          long            pAccItemId,
-                                          String          pSalesPrice) throws Exception
-    {
-        long lBrandItemUID = 0 ;
-        
-        try
-        {
-            if(pBrand.trim().length()!=0)
-            {
-                SsPrmInvItemCodes NewItemCode = new SsPrmInvItemCodes();
-
-                NewItemCode.accountId = pAccountId;
-
-                ArrayList<ssoKeyField> criterias = new ArrayList<ssoKeyField>();
-                ssoKeyField criteria1 = new ssoKeyField();
-                criteria1.ColumnName = "ACCOUNT_ID";
-                criteria1.Value      = pAccountId;
-                criterias.add(criteria1);
-
-                ssoKeyField criteria2 = new ssoKeyField();
-                criteria2.ColumnName = "BRAND_NAME";
-                criteria2.Value      = pBrand;
-                criterias.add(criteria2);
-
-                ssoKeyField criteria3 = new ssoKeyField();
-                criteria3.ColumnName = "ITEM_CODE";
-                criteria3.Value      = pItemCode;
-                criterias.add(criteria3);
-
-                NewItemCode = pem.find(SsPrmInvItemCodes.class, criterias);
-                if(NewItemCode==null)
-                {
-                    // New Item 
-                    //------------------------------------------------------
-                    NewItemCode = new SsPrmInvItemCodes();
-
-                    NewItemCode.accountId = pAccountId;
-                    NewItemCode.brandName = pBrand;
-                    NewItemCode.itemCode  = pItemCode;
-                    NewItemCode.accBrandId = pAccBrandId;
-                    NewItemCode.accItemId  = pAccItemId;
-                    NewItemCode.lastSalesPrice = new BigDecimal(pSalesPrice);
-
-                    lBrandItemUID = pem.persist(NewItemCode);
-                }
-                else
-                {
-                    lBrandItemUID = NewItemCode.uid;
-
-                    // Existing Item -> Update Last Sales Price Info
-                    //------------------------------------------------------
-                    // The following part is dismissed
-                    
-                    /*
-                    Query stmtUpdItemCode = pem.createNamedQuery("SsPrmInvItemCodes.updateSalesPrice", SsPrmInvItemCodes.class);
-
-                    int index = 1;
-                    stmtUpdItemCode.SetParameter(index++, pAccountId   , "LAST_SALES_PRICE");
-                    stmtUpdItemCode.SetParameter(index++, "bb-lib-api" , "BYUSER");
-                    stmtUpdItemCode.SetParameter(index++, lBrandItemUID, "UID");
-
-                    stmtUpdItemCode.executeUpdate();
-                    */
-
-                }
-            }
-            
-            return lBrandItemUID;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
     
-    public static long addNewCategory(  EntityManager  pem,
-                                        long           pAccountId,
-                                        String         pCategory
-                                     ) throws Exception
-    {
-        // Check if the category added before
-        // if not, add new one
-        long lCategoryUID = 0;
-        
-        try
-        {
-            if (pCategory.trim().length()!=0)
-            {
-                SsPrmInvCategories NewCategory = new SsPrmInvCategories();
-
-                NewCategory.accountId = pAccountId;
-
-                ArrayList<ssoKeyField> criterias = new ArrayList<ssoKeyField>();
-                ssoKeyField criteria1 = new ssoKeyField();
-                criteria1.ColumnName = "ACCOUNT_ID";
-                criteria1.Value      = pAccountId;
-                criterias.add(criteria1);
-
-                ssoKeyField criteria2 = new ssoKeyField();
-                criteria2.ColumnName = "CATEGORY";
-                criteria2.Value      = pCategory.trim().toUpperCase();
-                criterias.add(criteria2);
-
-                NewCategory = pem.find(SsPrmInvCategories.class, criterias);
-                if (NewCategory==null)
-                {
-                    NewCategory = new SsPrmInvCategories();
-                    
-                    //add New Category
-                    NewCategory.category  = pCategory;
-                    NewCategory.accountId = pAccountId;
-
-                    lCategoryUID = pem.persist(NewCategory);
-                }
-                else
-                    lCategoryUID = NewCategory.uid;
-
-            }
-
-            return lCategoryUID;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static boolean deleteCategory(   EntityManager  pem,
-                                            long           pAccountId,
-                                            String         pCategory) throws Exception
-    {
-        //WORKS WITH CACHE
-        
-        try
-        {
-            
-            //deleteTest(pem);
-
-            Query stmtFamily = pem.createNamedQuery("SsPrmInvCategories.deleteCategory", SsPrmInvCategories.class);
-
-            int index = 1;
-            stmtFamily.SetParameter(index++, pAccountId, "ACCOUNT_ID");
-            stmtFamily.SetParameter(index++, pCategory , "CATEGORY");
-
-            stmtFamily.executeUpdate();
-
-            return true;
-
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static boolean deleteBrand(  EntityManager  pem,
-                                        long           pAccountId,
-                                        String         pBrand) throws Exception
-    {
-        //WORKS WITH CACHE
-        try
-        {
-            Query stmtFamily = pem.createNamedQuery("SsPrmInvItemCodes.deleteBrand", SsPrmInvItemCodes.class);
-
-            int index = 1;
-            stmtFamily.SetParameter(index++, pAccountId, "ACCOUNT_ID");
-            stmtFamily.SetParameter(index++, pBrand    , "BRAND_NAME");
-
-            stmtFamily.executeUpdate();
-
-            return true;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static boolean deleteItemCode(   EntityManager  pem,
-                                            long           pAccountId,
-                                            String         pBrand,
-                                            String         pItemCode) throws Exception
-    {
-        try
-        {
-            // WORKS WITH CACHE
-            
-            Query stmtFamily = pem.createNamedQuery("SsPrmInvItemCodes.deleteItemCode", SsPrmInvItemCodes.class);
-
-            int ParIndex = 1;
-            stmtFamily.SetParameter(ParIndex++, pAccountId, "ACCOUNT_ID");
-            stmtFamily.SetParameter(ParIndex++, pBrand    , "BRAND_NAME");
-            stmtFamily.SetParameter(ParIndex++, pItemCode , "ITEM_CODE");
-
-            stmtFamily.executeUpdate();
-
-            return true;
-
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static ArrayList<SsPrmCountryCodes> getCountryCodes(EntityManager pem) throws Exception
-    {
-        try
-        {
-            // WORKS WITH CACHE
-            
-            ArrayList<SsPrmCountryCodes> CountryCodes = new ArrayList<SsPrmCountryCodes>();
-
-            CountryCodes = (ArrayList<SsPrmCountryCodes>)pem.findAll(SsPrmCountryCodes.class);
-
-            return CountryCodes;
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static ArrayList<ssoMCC> getMCCs(EntityManager pem) throws Exception
-    {
-        try
-        {
-            // WORKS WITH CACHE 
-            
-            ArrayList<ssoMCC> MCCs = new ArrayList<ssoMCC>();
-
-            Query stmtFamily = pem.createNamedQuery("SsPrmMcc.getMCCCodes", SsPrmMcc.class);
-
-            List<List<RowColumn>> rs = stmtFamily.getResultList();
-
-            for(int i=0; i<rs.size(); i++)
-            {
-                List<RowColumn> rowN = rs.get(i);
-
-                ssoMCC newMCC = new ssoMCC();
-
-                newMCC.code = Util.Database.getVal(rowN, "MCC").toString();
-                newMCC.lang = "en";
-                newMCC.name = Util.Database.getVal(rowN, "MCC_NAME").toString();
-
-                MCCs.add(newMCC);
-
-            }
-                
-            return MCCs;
-                
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    // City / State
-    public static ArrayList<ssoCityCode> getCityCodes(EntityManager pem, String pCountryCode) throws Exception
-    {
-        try
-        {
-            // WORKS WITH CACHE
-            
-            ArrayList<ssoCityCode> countyCodes = new ArrayList<ssoCityCode>();
-
-            Query stmtFamily;
-            stmtFamily = pem.createNamedQuery("SsPrmCountryStates.getCityCodes", SsPrmCountryStates.class);
-            
-            int ParIndex = 1;
-            stmtFamily.SetParameter(ParIndex++, pCountryCode, "COUNTRY_CODE");
-
-            List<List<RowColumn>> rs = stmtFamily.getResultList();
-
-            for (List<RowColumn> rowN:rs)
-            {
-                ssoCityCode newCity = new ssoCityCode();
-
-                newCity.code = Util.Database.getVal(rowN, "STATE_CODE").toString();
-                newCity.lang = "en";
-                newCity.name = Util.Database.getVal(rowN, "STATE_NAME").toString();
-
-                countyCodes.add(newCity);
-
-            }
-
-            return countyCodes;
-            /*
-            ArrayList<ssoCityCode> countyCodes = new ArrayList<ssoCityCode>();
-
-            Query stmtFamily;
-            if (pCountryCode.toLowerCase().trim().equals("tr")==true)
-            {
-                stmtFamily = pem.createNamedQuery("SsPrmCountryStates.getCityCodes", SsPrmCountryStates.class);
-            }
-            else
-            {
-                stmtFamily = pem.createNamedQuery("SsPrmCountryPostcodes.getCityCodes", SsPrmCountryPostcodes.class);
-            }
-
-            int ParIndex = 1;
-            stmtFamily.SetParameter(ParIndex++, pCountryCode, "COUNTRY_CODE");
-
-            List<List<RowColumn>> rs = stmtFamily.getResultList();
-
-            for (List<RowColumn> rowN:rs)
-            {
-                ssoCityCode newCity = new ssoCityCode();
-
-                newCity.code = Util.Database.getVal(rowN, "STATE_CODE").toString();
-                newCity.lang = "en";
-                newCity.name = Util.Database.getVal(rowN, "STATE_NAME").toString();
-
-                countyCodes.add(newCity);
-
-            }
-
-            return countyCodes;
-            */
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-        
-    }
-
-    public static ArrayList<ssoCountyCode> getCountyCodes(EntityManager pem, String pCountryCode, String pStateCode) throws Exception
-    {
-        ArrayList<ssoCountyCode> countyCodes = new ArrayList<ssoCountyCode>();
-        
-        try
-        {
-            // WORKS WITH CACHE
-
-            String KEY_POSTCODE     = "pst_code";
-            String KEY_PCODE_NAME   = "pst_name";
-            String KEY_COUNTY       = "county";
-            String KEY_LAT          = "lat";
-            String KEY_LON          = "lon";
-
-            /*
-            Query stmtFamily;
-            stmtFamily = pem.createNamedQuery("SsPrmCountryPostcodes.getCountyCodes", SsPrmCountryPostcodes.class);
-            
-            int Colindex = 1;
-            stmtFamily.SetParameter(Colindex++, pCountryCode , "COUNTRY_CODE");
-            stmtFamily.SetParameter(Colindex++, pStateCode   , "STATE_CODE");
-
-            List<List<RowColumn>> rs = stmtFamily.getResultList();
-            */
-            List<List<RowColumn>> rs = getPostCodesSourceData(pem, pCountryCode, pStateCode);
-            
-            if (rs.size()>0)
-            {
-                List<RowColumn> rowN = rs.get(0);
-
-                String sStateCode = Util.Database.getVal(rowN, "STATE_CODE").toString();
-                String sStateName = Util.Database.getVal(rowN, "STATE_NAME").toString();
-                String sPostCodes = Util.Database.getVal(rowN, "POSTCODES").toString();
-                JsonArray jsonArray = (JsonArray) Util.JSON.toArray(sPostCodes);
-
-                for (int j=0; j<jsonArray.size();j++)
-                {
-                    
-                    JsonObject item = (JsonObject)jsonArray.get(j);
-
-                    JsonElement jePostCode  = item.get(KEY_POSTCODE);
-                    JsonElement jePCodeName = item.get(KEY_PCODE_NAME);
-
-                    ssoCountyCode newCounty = new ssoCountyCode();
-
-                    newCounty.code  =   jePostCode.toString().replace("\"", "");
-                    newCounty.name  =   jePCodeName.toString().replace("\"", "");
-                    newCounty.lang = "en";
-                 
-                    countyCodes.add(newCounty);
-                }
-
-                /*
-                ssoCountyCode newCounty = new ssoCountyCode();
-
-                newCounty.code = Util.Database.getVal(rowN, "COUNTY_CODE").toString();
-                newCounty.lang = "en";
-                newCounty.name = Util.Database.getVal(rowN, "COUNTY_NAME").toString();
-
-                countyCodes.add(newCounty);
-                */
-
-            }
-
-            return countyCodes;
-
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
     public static void readTest(EntityManager pem)
     {
 
@@ -1609,240 +1183,6 @@ public final class InventoryOps
 
     }
 
-    // pCityCode = STATE CODE
-    public static ArrayList<SsPrmCountryPostcodes> getPostCodes(EntityManager pem, String pCountryCode, String pCityCode) throws Exception
-    {
-        // WORKS WITH CACHE
-        
-        ArrayList<SsPrmCountryPostcodes> pstCodes = new ArrayList<SsPrmCountryPostcodes>();
-
-        try
-        {
-            String KEY_POSTCODE     = "pst_code";
-            String KEY_PCODE_NAME   = "pst_name";
-            String KEY_COUNTY       = "county";
-            String KEY_LAT          = "lat";
-            String KEY_LON          = "lon";
-            
-            List<List<RowColumn>> rs = getPostCodesSourceData(pem, pCountryCode, pCityCode);
-            //for(int i=0; i<rs.size(); i++)
-            if (rs.size()>0)
-            {
-                List<RowColumn> rowN = rs.get(0);
-
-                String sStateCode = Util.Database.getVal(rowN, "STATE_CODE").toString();
-                String sStateName = Util.Database.getVal(rowN, "STATE_NAME").toString();
-                String sPostCodes = Util.Database.getVal(rowN, "POSTCODES").toString();
-                JsonArray jsonArray = (JsonArray) Util.JSON.toArray(sPostCodes);
-
-                for (int j=0; j<jsonArray.size();j++)
-                {
-                    JsonObject item = (JsonObject)jsonArray.get(j);
-
-                    JsonElement jePostCode = item.get(KEY_POSTCODE);
-
-                    if(jePostCode!=null)
-                    {
-                        SsPrmCountryPostcodes newPostCode = new SsPrmCountryPostcodes();
-
-                        newPostCode.postCode    = jePostCode.toString().replace("\"", "");
-                        newPostCode.placeName   = item.get(KEY_PCODE_NAME).toString().replace("\"", "");
-                        newPostCode.countyName  = item.get(KEY_COUNTY).toString().replace("\"", "");
-                        newPostCode.lat         = item.get(KEY_LAT).toString().replace("\"", "");
-                        newPostCode.lon         = item.get(KEY_LON).toString().replace("\"", "");
-                        newPostCode.stateCode   = sStateCode;
-                        newPostCode.stateName   = sStateName;
-                        
-                        pstCodes.add(newPostCode);
-                    }
-                }
-            }
-            
-            return pstCodes;
-
-            /*
-            StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_PRM_GET_POSTCODES");
-
-            SP.registerStoredProcedureParameter("P_COUNTRY_CODE"    , String.class         , ParameterMode.IN);
-            SP.registerStoredProcedureParameter("P_CITY_CODE"       , String.class         , ParameterMode.IN);
-
-            int Colindex = 1;
-            SP.SetParameter(Colindex++, pCountryCode, "P_COUNTRY_CODE");
-            SP.SetParameter(Colindex++, pCityCode   , "P_CITY_CODE");
-
-            SP.execute();
-
-            ArrayList<SsPrmCountryPostcodes> PostCodes =  (ArrayList<SsPrmCountryPostcodes>)SP.getResultList(SsPrmCountryPostcodes.class);
-
-            return PostCodes;
-            */
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    public static List<List<RowColumn>> getPostCodesSourceData(EntityManager pem, String pCountryCode, String pCityCode)
-    {
-        try
-        {
-            // WORKS WITH CACHE
-
-            Query stmtFamily;
-            stmtFamily = pem.createNamedQuery("SsPrmCountryPostcodes.getPostodes", SsPrmCountryPostcodes.class);
-
-            int Colindex = 1;
-            stmtFamily.SetParameter(Colindex++, pCountryCode , "COUNTRY_CODE");
-            stmtFamily.SetParameter(Colindex++, pCityCode    , "STATE_CODE");
-
-            ArrayList<ssoKeyField> keys = new ArrayList<ssoKeyField>();
-
-            boolean rc = false;
-            List<List<RowColumn>>  rs = stmtFamily.getResultList();
-
-            return rs;
-        }
-        catch(Exception e)
-        {
-            return null;
-        }
-            
-    }
-        
-    public static void getMCCCodes(EntityManager pem) throws Exception
-    {
-        return ;
-    }
-
-    public static void getTownCodes(EntityManager pem, String pCountryCode, String pCityCode) throws Exception
-    {
-        return ;
-    }
-
-    public static void getCurrencyCodes(EntityManager pem) throws Exception
-    {
-        return ;
-    }
-
-    // This function returns the list of brands associated with the merchant
-    public static ArrayList<ssoInvBrandItemCodes> getBrandList(EntityManager pem, long pMrcId) throws Exception
-    {
-        // WORKS WITH CACHE
-
-        ArrayList<ssoInvBrandItemCodes> BrandList = new ArrayList<ssoInvBrandItemCodes>();
-
-        try
-        {
-            Query stmtFamily = pem.createNamedQuery("SsPrmInvItemCodes.getBrandNItemList", SsPrmInvItemCodes.class);
-            int index = 1;
-            stmtFamily.SetParameter(index++, pMrcId, "ACCOUNT_ID");
-            //stmtFamily.SetParameter(index++, psFamilyCode , "FAMILY_CODE");
-            List<List<RowColumn>> rs = stmtFamily.getResultList();
-
-            for(int i=0; i<rs.size(); i++)
-            {
-                List<RowColumn> rowN = rs.get(i);
-
-                ssoInvBrandItemCodes newBrandItem = new ssoInvBrandItemCodes();
-                
-                newBrandItem.brandName = Util.Database.getVal(rowN, "BRAND_NAME").toString().trim().toUpperCase();
-                newBrandItem.itemCodes = Util.Database.getVal(rowN, "CODE_LIST").toString();
-
-                BrandList.add(newBrandItem);
-            }
-
-            return BrandList;
-            /*
-            ArrayList<ssoKeyField> keys = new ArrayList<ssoKeyField>();
-
-            ssoKeyField keyAccId = new ssoKeyField();
-            keyAccId.ColumnName = "ACCOUNT_ID";
-            keyAccId.Value      = pMrcId;
-            keys.add(keyAccId);
-
-            ArrayList<SsInvBrands> brands = new ArrayList<SsInvBrands>();
-            brands = (ArrayList<SsInvBrands>)pem.findAll(SsInvBrands.class, keys);
-            for (SsInvBrands brandN: brands)
-            {
-                ssoInvBrandItemCodes newBrand = new ssoInvBrandItemCodes();
-                //newBrand.brandName = brandN.uid;
-                //newBrand.name = brandN.brand;
-
-                BrandList.add(newBrand); 
-            }
-
-            return BrandList;
-            */
-            
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
-
-    //This function returns categories associated with the merchant
-    public static ArrayList<ssoInvCategory> getCategoryList(EntityManager pem, long pMrcId) throws Exception
-    {
-        
-        ArrayList<ssoInvCategory> ctgList = new ArrayList<ssoInvCategory>();
-
-        try
-        {
-            //ctg = pem.find(SsPrmInvCategories.class, pMrcId , true, "ACCOUNT_ID");
-            //ctg = pem.find(SsPrmInvCategories.class, pMrcId);
-            ArrayList<ssoKeyField> keys = new ArrayList<ssoKeyField>();
-
-            ssoKeyField keyAccId = new ssoKeyField();
-            keyAccId.ColumnName = "ACCOUNT_ID";
-            keyAccId.Value      = pMrcId;
-            keys.add(keyAccId);
-
-            ArrayList<SsPrmInvCategories> ctgs = new ArrayList<SsPrmInvCategories>();
-            ctgs = (ArrayList<SsPrmInvCategories>)pem.findAll(SsPrmInvCategories.class, keys);
-            for (SsPrmInvCategories ctgN: ctgs)
-            {
-                ssoInvCategory newCategory = new ssoInvCategory();
-                newCategory.code = ctgN.uid;
-                newCategory.name = ctgN.category.trim().toUpperCase();
-
-                ctgList.add(newCategory);
-            }
-
-            return ctgList;
-
-            //ctgList = (ArrayList<SsPrmInvCategories>)pem.findAll(SsPrmInvCategories.class);
-
-            /*
-            ArrayList<ssoInvCategory> Categories = new ArrayList<ssoInvCategory>();
-
-            StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_PRM_MRC_GET_CATEGORIES");
-            SP.registerStoredProcedureParameter("P_ACC_ID"    , Long.class         , ParameterMode.IN);
-
-            int Colindex = 1;
-            SP.SetParameter(Colindex++, pMrcId, "P_ACC_ID");
-
-            SP.execute();
-
-            List<List<RowColumn>> rs =  SP.getResultList();
-            for (List<RowColumn> RowN:rs)
-            {
-                ssoInvCategory newCategory = new ssoInvCategory();
-
-                newCategory.name = Util.Database.getVal(RowN, "CATEGORY").toString();
-
-                Categories.add(newCategory);
-            }
-
-            return Categories;
-            */
-        }
-        catch(Exception e)
-        {
-            throw e;
-        }
-    }
 
     public static ssoInventoryParams getItemLastEntryInfo(EntityManager pem, long pMrcId, String pItemCode) throws Exception
     {
@@ -1887,38 +1227,159 @@ public final class InventoryOps
         }
     }
 
+    public static ArrayList<ssoPrintByBillData> getPrintDataByBill( EntityManager   pem,
+                                                                    long            pUserId,
+                                                                    long            pAccId,
+                                                                    String          pKeyword,
+                                                                    boolean         pbExactMatch,
+                                                                    boolean         bReset) throws Exception 
+    {
+        ArrayList<ssoPrintByBillData> printData = new ArrayList<ssoPrintByBillData>();
+        Jedis  jedis = new Jedis();
+        
+        try
+        {
+            // This methods work cache oriented.
+            // If data found on cache, continues from there
+            // If not, fetch the data and restore on cache.
+            // This methods works cordinated with new inventory bill method.
+            // In case of new entry, the cache will be reset by that method
+            //
+            // Last 100 entry is stored 
+            if(bReset==true)
+                pem.flush();
+
+            ArrayList<ssoBrand> aBrands = new ArrayList<ssoBrand>();
+            aBrands = DictionaryOps.Vendor.findMatchedBrands4Account(pem, pAccId, pKeyword);
+
+            if(aBrands.size()>0)
+                jedis = Util.Redis.getConnection();
+
+            // Search for the ItemCodes matched in parameter table in ss_acc_inv_brand_item_codes table
+            //-----------------------------------------------------------------
+            ArrayList<ssoInvBrandItemCodes> itemsFound = new ArrayList<ssoInvBrandItemCodes>();
+            for(ssoBrand brandN:aBrands)
+            {
+                if(pbExactMatch==true)
+                {
+                    if(brandN.name.toLowerCase().trim().equals(pKeyword.toLowerCase().trim())!=true)
+                        continue;
+                }
+                
+                String sStorageKey = "";// "ss_txn_inv_bill" +"printbybill" + accId + vendorId
+                
+                ArrayList<ssoPrintByBillData> brandNPrintData = new ArrayList<ssoPrintByBillData>();
+                //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // 1. CHECK CACHE IF EXISTS 
+                //--------------------------------------------------------------
+                sStorageKey = getVendorBillQueueName(pAccId, brandN.Id);
+
+                String sData = null;
+                if(bReset!=true)
+                {
+                    sData = Util.Redis.JString.get(jedis, sStorageKey);
+                }
+                else//RESET = TRUE
+                {
+                    Util.Redis.JString.remove(jedis, sStorageKey);
+                }
+
+                if (sData==null)//not found on cache
+                {
+                    Query stmtPrintData = pem.createNamedQuery("SsInvBill.getPrintDataByBill", SsTxnInvBill.class);
+
+                    int index = 1;
+                    stmtPrintData.SetParameter(index++, pAccId          , "ACCOUNT_ID");
+                    stmtPrintData.SetParameter(index++, brandN.Id       , "VENDOR_ID");
+
+                    List<List<RowColumn>> rs = stmtPrintData.getResultList();
+                    for(int i=0; i<rs.size(); i++)
+                    {
+                        ssoPrintByBillData dataN = new ssoPrintByBillData();
+
+                        List<RowColumn> rowN = rs.get(i);
+
+                        dataN.accountId     = Long.toString(pAccId);
+                        dataN.insertdate    = Util.Database.getValString(rowN, "INSERTDATE").toString();
+                        dataN.txnDate       = Util.Database.getValString(rowN, "TXN_DATE").toString();
+                        dataN.totalAmount   = Util.Database.getValString(rowN, "TOTAL_NET").toString();
+                        dataN.totalQuantity = Util.Database.getValString(rowN, "TOTAL_QUANTITY").toString();
+                        dataN.subtotalsQuantity = Util.Database.getValString(rowN, "QUANTITY_SUBTOTALS").toString();
+                        dataN.options       = Util.Database.getValString(rowN, "OPTIONS").toString();
+                        dataN.prices        = Util.Database.getValString(rowN, "PRICES").toString();
+                        dataN.year          = Util.Database.getValString(rowN, "YEAR").toString();
+                        dataN.price1        = Util.Database.getValString(rowN, "PRICE_ENTRY").toString();
+                        dataN.price2        = Util.Database.getValString(rowN, "PRICE_END").toString();
+                        dataN.currency      = "TL";//for now
+                        dataN.vendorId      = Util.Database.getValString(rowN, "BRAND_ID").toString();
+                        dataN.vendorName    = Util.Database.getValString(rowN, "BRAND").toString();
+                        
+                        brandNPrintData.add(dataN);//this is for cache for each brand
+                        printData.add(dataN);//this is to return
+                    }
+
+                    // SAVE 2 CACHE
+                    //-----------------------------------------------------------------
+                    Util.Redis.JObject.set(jedis, sStorageKey, brandNPrintData);
+
+                }
+                else
+                {
+                    // Data Found on Cache
+                    JsonArray jsPrintData = Util.JSON.toArray(sData);
+                    for(int i =0; i<jsPrintData.size(); i++)
+                    {
+                        ssoPrintByBillData dataN = new ssoPrintByBillData();
+                        dataN = (ssoPrintByBillData)Util.JSON.toObject(jsPrintData.get(i).toString(), ssoPrintByBillData.class);
+                        printData.add(dataN);
+                    }
+                }
+                
+            }
+            
+            Util.Redis.releaseConnection(jedis);
+                    
+            return printData;
+        }
+        catch(Exception e)
+        {
+            Util.Redis.releaseConnection(jedis);
+            throw e;
+        }
+    }
+
+    public static String getVendorBillQueueName(long pAccId, long pVendorId)
+    {
+        String sStorageKey = "ss_txn_inv_bill" + "." + "printbybill" + "." + pAccId + "." + pVendorId;
+
+        return sStorageKey;
+    }
+
+    public static void cleanVendorBillQueue(long pAccId, long pVendorId)
+    {
+        Jedis  jedis = new Jedis();
+        
+        jedis = Util.Redis.getConnection();
+        
+        String sStorageKey = getVendorBillQueueName(pAccId, pVendorId);
+        
+        Util.Redis.JString.remove(jedis, sStorageKey);
+        
+        Util.Redis.releaseConnection(jedis);
+    }
+
     // USER ID <> ACC ID (AccId under User Id)
-    public static ArrayList<ssoInvBrandItemCodes> searchInventoryItems(EntityManager pem, long pAccId, String pKeyword) throws Exception
+    public static ArrayList<ssoInvBrandItemCodes> searchInventoryItems( EntityManager pem, 
+                                                                        long pAccId, 
+                                                                        String pKeyword) throws Exception
     {
         try
         {
-            ArrayList<SsPrmInvItemCodes> aPrmItemCodes = new ArrayList<SsPrmInvItemCodes>();
+
             ArrayList<ssoInvBrandItemCodes> aItemsFound = new ArrayList<ssoInvBrandItemCodes>();
-            
-            /*
-            ArrayList<Long> aBrandIds = new ArrayList<Long>();
-            ArrayList<ssoInvBrandItemCodes> aItemsFound = new ArrayList<ssoInvBrandItemCodes>();
-            
-            ArrayList<ssoKeyField> criterias = new ArrayList<ssoKeyField>();
 
-            ssoKeyField keyAccId = new ssoKeyField();
-            keyAccId.ColumnName = "ACCOUNT_ID";
-            keyAccId.Value      = pMrcId;
-            criterias.add(keyAccId);
-
-            aPrmItemCodes = (ArrayList<SsPrmInvItemCodes>)pem.findAll(SsPrmInvItemCodes.class, criterias);
-
-            for(SsPrmInvItemCodes itemCodeN:aPrmItemCodes)
-            {
-                if (itemCodeN.brandName.toLowerCase().indexOf(pKeyword.toLowerCase().trim())>=0)
-                {
-                    //itemCodeN.accBrandId
-                    add2ListByUniqueBrandId(aBrandIds, itemCodeN.accBrandId);
-                }
-            }
-            */
             ArrayList<ssoBrand> aBrands = new ArrayList<ssoBrand>();
-            aBrands = InventoryMisc.findMatchedBrandsForAccount(pem, pAccId, pKeyword);
+            aBrands = DictionaryOps.Vendor.findMatchedBrands4Account(pem, pAccId, pKeyword);
 
             // Search for the ItemCodes matched in parameter table in ss_acc_inv_brand_item_codes table
             //-----------------------------------------------------------------
@@ -1926,22 +1387,25 @@ public final class InventoryOps
             for(ssoBrand brandN:aBrands)
             {
 
-                Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.findItemWithOptions", SsAccInvBrandItemOptions.class);
+                Query stmtFamily = pem.createNamedQuery("SsAccInvBrandItemOptions.findItemWithOptions", SsAccInvOptionStats.class);
                 int index = 1;
                 stmtFamily.SetParameter(index++, pAccId          , "ACCOUNT_ID");
                 stmtFamily.SetParameter(index++, brandN.Id       , "BRAND_ID");
 
                 List<List<RowColumn>> rs = stmtFamily.getResultList();
                 for(int i=0; i<rs.size(); i++)
-                {
+                { 
                     ssoInvBrandItemCodes itemN = new ssoInvBrandItemCodes();
 
                     List<RowColumn> rowN = rs.get(i);
 
                     itemN.brandName = Util.Database.getValString(rowN, "BRAND").toString();
                     itemN.itemCodes = Util.Database.getValString(rowN, "ITEM_CODE").toString();
+                    itemN.refId     = Util.Database.getValString(rowN, "HASH_MD5").toString();
                     itemN.quantity  = Util.Database.getValString(rowN, "QUANTITY_ENTERED").toString();
+
                     itemN.options   = Util.Database.getValString(rowN, "OPTS").toString();
+
                     itemN.entryDate = Util.Database.getValString(rowN, "DT").toString();
                     /*
                     itemN.entryDate = itemN.entryDate.substring(2, 4) + "." + 
@@ -1983,32 +1447,35 @@ public final class InventoryOps
             paList.add(pNew);
     }
 
-    public static ArrayList<ssoUIBalanceItem> getInventoryBalanceByKeyword( EntityManager pem, 
-                                                                                long          pUserId,
-                                                                                String        pKeyword) throws Exception
-    {
-        /*
-            1. FIND THE BRANDS MATCHED WITH KEYWORD
-            2. FIND THE LIST OF ACCOUNTS / BRANCHES FOR THE USER
-            3. PER ACCOUNT / BRANCH
-            3.1.      CALCULATE BRAND-ITEM SUM
-            3.2.      CALCULATE BRAND-OPTION(s) SUM
-            4. CALCULATE BRAND SUM FOR ALL ACCOUNTS TOTAL
+    /*
+        1. FIND THE BRANDS MATCHED WITH KEYWORD
+        2. FIND THE LIST OF ACCOUNTS / BRANCHES FOR THE USER
+        3. PER ACCOUNT / BRANCH
+        3.1.      CALCULATE BRAND-ITEM SUM
+        3.2.      CALCULATE BRAND-OPTION(s) SUM
+        4. CALCULATE BRAND SUM FOR ALL ACCOUNTS TOTAL
 
-            LEVEL 1: ROOT LEVEL(Brand Level) (SHOWS ONLY BRAND BALANCE) (This level will be calculated by level 2 data)
-            LEVEL 2: PER ACCOUNT/BRANCH LEVEL 
-            LEVEL 3: BREAK DOWN OF ACCCOUNT /BRANCH (option level)
+        LEVEL 1: ROOT LEVEL(Brand Level) (SHOWS ONLY BRAND BALANCE) (This level will be calculated by level 2 data)
+        LEVEL 2: PER OPTION - PER ACCOUNT/BRANCH LEVEL 
+        LEVEL 3: BREAK DOWN OF ACCCOUNT /BRANCH (option level)
 
-            Sample Data output
-            Item           - Net - Received - Returned - Sold - Activity
-            MODIVA / 002   - 10  - 20       - 2 ...
-                BULBULLER  - 5   - 15 ...
-                    Green  ...
-                    Blue   ...
+        Sample Data output
+        Item           - Net - Received - Returned - Sold - Activity
+        MODIVA / 002   - 10  - 20       - 2 ... (Brand level)
+            Green  ...                          (Option Level)
+                BULBULLER  - 5   - 15 ...       (Branch Level)
                 DILEK      - 5   - 5  ...
-                    Red    ...
-                    Purple ...
-        */
+            Blue   ...
+                DILEK      - 5   - 5  ...
+            Red    ...
+            Purple ...
+    */
+    /*
+    public static ArrayList<ssoUIBalanceItem> getInventoryBalanceByKeyword( EntityManager pem, 
+                                                                            long          pUserId,
+                                                                            String        pKeyword) throws Exception
+    {
+        
         try
         {
             int ThisYear = Integer.parseInt(Util.DateTime.GetDateTime_s().substring(0, 4));
@@ -2017,11 +1484,12 @@ public final class InventoryOps
 
             // Get branches / accounts linked to the user
             ArrayList<ssoMerchant> branches = new ArrayList<ssoMerchant>();
-            branches = AccountMisc.getListOfMerchants4User(pem, pUserId);
+            // on Cache
+            branches = UserOps.getListOfAccounts4User(pem, pUserId);
 
-            // Step 1.
+            // Step 1. (on cache)
             ArrayList<ssoBrand> aBrands = new ArrayList<ssoBrand>();
-            aBrands = InventoryMisc.findMatchedBrandsForAccount(pem, pUserId, pKeyword);
+            aBrands = DictionaryOps.Account.findMatchedBrandsForAccount(pem, pUserId, pKeyword);
 
             for (ssoBrand brandN: aBrands)
             {
@@ -2032,7 +1500,7 @@ public final class InventoryOps
                 //Step 2.
                 for(ssoMerchant accN: branches)
                 {
-                    // LEVEL 2 (Account Level)
+                    // LEVEL 1 (Item Code Level)
                     // PARENT_KEY = <BrandName>
                     //----------------------------------------------------------
 
@@ -2040,93 +1508,45 @@ public final class InventoryOps
                     // 3. CALCULATION FOR EACH BRANCH / ACCOUNT
                     //-------------------------------------------
 
-                    //3.1 calculate item(s) balance for brand of accId
+                    // on cache
+                    //3.1 calculate item(s) balance for brand of accId (ON CACHE)
                     ArrayList<ssoAccInvBalanceCore> itemBalances = new ArrayList<ssoAccInvBalanceCore>();
-                    itemBalances = AccountMisc.calculateAccountBalance4Brand(   pem,
-                                                                                accN.id, 
-                                                                                accN.name,
-                                                                                brandN.name, 
-                                                                                ThisYear);
-                    //Adding to Balance Sheet
-                    for(ssoAccInvBalanceCore ItemN:itemBalances)
-                    {
-                        ssoUIBalanceItem newItem = new ssoUIBalanceItem();
-                        
-                        newItem.level = 2;
-                        newItem.name = accN.name;
-                        newItem.key  = Long.toString(ItemN.AccountId);
-                        newItem.parentKey = Long.toString(brandN.Id);
-                        newItem.quantity = ItemN.quantity;
-                        newItem.balance  = ItemN.balance;
-                        
-                        balanceSheetLevel2.add(newItem);//add balance of each item
-                    }
+                    balanceSheetLevel1 = ssReportSearchInventory.generateLEVEL1_Brands( pem,
+                                                                                        accN.id,
+                                                                                        accN.name,
+                                                                                        brandN.name,
+                                                                                        ThisYear);
+
+                    // LEVEL 2 (Option Level)
+                    // PARENT_KEY = bRAND + Itemcode
+                    //------------------------------------------------------
+                    balanceSheetLevel2 = ssReportSearchInventory.generateLEVEL2_Options(pem, 
+                                                                                        accN.id, 
+                                                                                        accN.name, 
+                                                                                        brandN.name, 
+                                                                                        ThisYear, 
+                                                                                        balanceSheetLevel1);
+
                     
-                    //Calculating sub-level (Level 3)
-                    for(ssoAccInvBalanceCore ItemN:itemBalances)
-                    {
+                    
+                    // LEVEL 3 = BRANCH LEVEL
+                    //----------------------------------------------------------
+                    // CALCULATE BOTTOM LINE FOR branches BY LEVEL 2 DATA (options)
+                    balanceSheetLevel3 = ssReportSearchInventory.generateLEVEL3_Branches(pem, 
+                                                                                         accN.name, 
+                                                                                         balanceSheetLevel2);
+                    
+                    // LEVEL 3 = BRANCH LEVEL
+                    //----------------------------------------------------------
+                    // CALCULATE BOTTOM LINE FOR branches BY LEVEL 2 DATA (options)
 
-                        // LEVEL 3 (Option Level)
-                        // PARENT_KEY = <Branch/Account>
-                        //------------------------------------------------------
-                        
-                        //3.2 calculate balance for brand-option(s) of accId
-                        ArrayList<ssoAccInvBalanceCore> optionBalances = new ArrayList<ssoAccInvBalanceCore>();
-                        optionBalances = AccountMisc.calculateOptionsBalance4Account( pem, 
-                                                                                     accN.id,
-                                                                                     accN.name,
-                                                                                     brandN.name, 
-                                                                                     ItemN.ItemCodeId, 
-                                                                                     ItemN.ItemCode, 
-                                                                                     ThisYear);
-                        //Add data to BalanceSheet (LEVEL 3)
-                        //------------------------------------------------------
-                        for(ssoAccInvBalanceCore optN:optionBalances)
-                        {
-                            ssoUIBalanceItem newItem = new ssoUIBalanceItem();
-
-                            newItem.level = 3;
-                            newItem.name = optN.Option;
-                            newItem.key  = optN.Option;
-                            newItem.parentKey = Long.toString(accN.id);
-                            newItem.quantity = optN.quantity;
-                            newItem.balance  = optN.balance;
-
-                            balanceSheetLevel3.add(newItem);//add balance of each item
-                        }
-                        
-                    }
 
                 }// end of account N loop
 
-                // LEVEL 1 = ROOT LEVEL - BRAND LEVEL
-                //----------------------------------------------------------
-                // CALCULATE BOTTOM LINE FOR BRAND BY LEVEL 2 DATA
-                ArrayList<ssoUIBalanceItem>  summary = new ArrayList<ssoUIBalanceItem>();
-                ssoUIBalanceItem SumBalance = new ssoUIBalanceItem();
-                SumBalance.name = brandN.name;
-                SumBalance.parentKey = "";
-                SumBalance.key  = Long.toString(brandN.Id);
-                for(ssoUIBalanceItem balanceN:balanceSheetLevel2)
-                {
-                    if (balanceN.parentKey.equals(Long.toString(brandN.Id))==true)
-                    {
-                        SumBalance.quantity.net      += balanceN.quantity.net;
-                        SumBalance.quantity.received += balanceN.quantity.received;
-                        SumBalance.quantity.returned += balanceN.quantity.returned;
-                        SumBalance.quantity.sold     += balanceN.quantity.sold;
-
-                        SumBalance.balance.net.add(balanceN.balance.net);
-                        SumBalance.balance.received.add(balanceN.balance.received);
-                        SumBalance.balance.returned.add(balanceN.balance.returned);
-                        SumBalance.balance.sold.add(balanceN.balance.sold);
-
-                    }
-                }
-                
-                balanceSheet.add(SumBalance);//level 1
+                balanceSheet.addAll(balanceSheetLevel1);
                 balanceSheet.addAll(balanceSheetLevel2);
-                balanceSheet.addAll(balanceSheetLevel3);
+                balanceSheet.addAll(balanceSheetLevel3);//level 1
+
             }//end of brand N loop
 
             return balanceSheet;
@@ -2142,6 +1562,145 @@ public final class InventoryOps
             throw e;
         }
     }
+    */
+    
+    public static String[] getRowKeyParts(String pKey)
+    {
+        String [] aKeyParts = pKey.split("-");
+        return aKeyParts;
+    }
+    
+    public static String generateRowKey(String prm1, String prm2, String prm3, String prm4)
+    {
+        return prm1 + "-" + prm2 + "-" + prm3 + "-" + prm4;
+    }
+
+    public static String generateRowKeyWSign(String pSEPERATOR_SIGN, String prm1, String prm2, String prm3, String prm4, String prm5, String prm6)
+    {
+        return prm1 + pSEPERATOR_SIGN + prm2 + pSEPERATOR_SIGN + prm3 + pSEPERATOR_SIGN + prm4 + pSEPERATOR_SIGN + prm5 + pSEPERATOR_SIGN + prm6;
+    }
+
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // WARNING
+    // This methods run thru the cahce memory data so be careful when changing 
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    /*
+        1. FIND THE BRANDS MATCHED WITH KEYWORD
+        2. FIND THE LIST OF ACCOUNTS / BRANCHES FOR THE USER
+        3. PER ACCOUNT / BRANCH
+
+        LEVEL 1: ROOT LEVEL(Brand Level) (SHOWS ONLY BRAND BALANCE) (This level will be calculated by level 2 data)
+        LEVEL 2: PER ACCOUNT/BRANCH LEVEL 
+        LEVEL 3: BREAK DOWN OF ACCCOUNT /BRANCH (option level)
+
+        Sample Data output
+        Item           - Net - Received - Returned - Sold - Activity
+        MODIVA / 002   - 10,000  - 5,000  - 2,000  ... (Brand Level)
+            BULBULLER  - 5   - 15 ... (Branch Level)
+            DILEK      - 5   - 5  ...
+    */
+    /*
+    public static ArrayList<ssoUIBalanceItem> getBrandBalances( EntityManager pem, 
+                                                                long          pUserId,
+                                                                String        pKeyword) throws Exception
+    {
+        try
+        {
+            int ThisYear = Integer.parseInt(Util.DateTime.GetDateTime_s().substring(0, 4));
+
+            ArrayList<ssoUIBalanceItem>  balanceSheet = new ArrayList<ssoUIBalanceItem>();
+
+            // Get branches / accounts linked to the user (on cache)
+            ArrayList<ssoMerchant> branches = new ArrayList<ssoMerchant>();
+            branches = UserOps.getListOfAccounts4User(pem, pUserId);
+
+            // Step 1. (on cache)
+            ArrayList<ssoBrand> aBrands = new ArrayList<ssoBrand>();
+            aBrands = DictionaryOps.Account.findMatchedBrandsForAccount(pem, pUserId, pKeyword);
+
+            if (aBrands.size()>0)
+            {
+                for (ssoBrand brandN: aBrands)
+                {
+                    ArrayList<ssoUIBalanceItem>  balanceSheetLevel1 = new ArrayList<ssoUIBalanceItem>();
+                    ArrayList<ssoUIBalanceItem>  balanceSheetLevel2 = new ArrayList<ssoUIBalanceItem>();
+                    //ArrayList<ssoUIBalanceItem>  balanceSheetLevel3 = new ArrayList<ssoUIBalanceItem>();
+
+                    //Step 2.
+                    for(ssoMerchant accN: branches)
+                    {
+                        ArrayList<ssoAccInvBalanceCore> brandBalances = new ArrayList<ssoAccInvBalanceCore>(); 
+                        // On Cache
+                        brandBalances = AccountMisc.calculateBrandBalances( pem,
+                                                                            accN.id, 
+                                                                            accN.name,
+                                                                            brandN.name, 
+                                                                            ThisYear);
+
+                        // LEVEL 2 = Totals for Branch
+                        //----------------------------------------------------------
+                        for(ssoAccInvBalanceCore balanceN:brandBalances)
+                        {
+                            ssoUIBalanceItem newItem = new ssoUIBalanceItem();
+
+                            newItem.level = 2;
+                            newItem.name = balanceN.AccountName;//balanceN.Brandname;
+                            newItem.key  = generateRowKey(balanceN.AccountName, balanceN.Brandname, "");
+                            newItem.parentKey = brandN.name;
+                            newItem.quantity = balanceN.quantity;
+                            newItem.balance  = balanceN.balance;
+                            newItem.lastActivity = balanceN.lastActivity;
+
+                            balanceSheetLevel2.add(newItem);//add balance of each item
+                        }
+
+                    }// end of branches
+
+                    // LEVEL 1 = TOTALS for Brand
+                    // TOTALS = SUM(BRANCH1..N)
+                    //----------------------------------------------------------
+                    ssoUIBalanceItem newItem = new ssoUIBalanceItem();
+                    newItem.level = 1;
+                    newItem.name = brandN.name;
+                    newItem.key  = brandN.name;
+                    newItem.parentKey = "";
+                    for (ssoUIBalanceItem balanceN:balanceSheetLevel2)
+                    {
+                        newItem.quantity.received += balanceN.quantity.received;
+                        newItem.quantity.returned += balanceN.quantity.returned;
+                        newItem.quantity.sold     += balanceN.quantity.sold;
+
+                        newItem.balance.received = newItem.balance.received.add(balanceN.balance.received);
+                        newItem.balance.returned = newItem.balance.returned.add(balanceN.balance.returned);
+                        newItem.balance.sold     = newItem.balance.sold.add(balanceN.balance.sold);
+
+                        newItem.lastActivity  = balanceN.lastActivity;
+
+                    }
+
+                    balanceSheetLevel1.add(newItem);//add balance of each item
+
+                    balanceSheet.addAll(balanceSheetLevel1);
+                    balanceSheet.addAll(balanceSheetLevel2);
+
+                }//end for brands
+
+            }
+            else
+            {
+                // skip (no calculation for all brands allowed, this will be a report)
+            }
+            
+            
+            return balanceSheet;
+        }
+        catch(Exception e)
+        {
+            throw e;
+        }
+
+    }
+    */
 
 }
 

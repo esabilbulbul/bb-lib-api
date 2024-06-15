@@ -5,6 +5,7 @@
  */
 package bb.app.dekonts;
 
+import bb.app.obj.ssoMerchantPreferences;
 import java.util.ArrayList;
 
 /**
@@ -13,6 +14,8 @@ import java.util.ArrayList;
  */
 public class DekontSummary
 {
+    public ssoMerchantPreferences accPrefs = new ssoMerchantPreferences();
+    
     public String currency = "";
 
     public ArrayList<DekontSummaryTots>           banks    = new ArrayList<DekontSummaryTots>();
