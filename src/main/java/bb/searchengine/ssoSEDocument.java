@@ -15,14 +15,23 @@ import java.util.List;
  */
 public class ssoSEDocument 
 {
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    //
+    // WARNING!!
+    //
+    // When you added new field here you need to update the mapping (initSearchEngineIndex)
+    //
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     public BigInteger Id            = BigInteger.ZERO;//item Id
-    public String itemCode          = "";
-    
-public int itemSegment          = 0;//Segment = Clothing, Electronics and so on
 
     public BigInteger userId        = BigInteger.ZERO;//+
     public BigInteger accountId     = BigInteger.ZERO;//+
+
+    public String itemCode          = "";
+    
+    public int itemSegment          = 0;//Segment = Clothing, Electronics and so on
+
     public BigInteger vendorId      = BigInteger.ZERO;//+
     public BigInteger partnerId     = BigInteger.ZERO;//partner's product n/a
     public BigInteger agreementId   = BigInteger.ZERO;//partner - host agreement Id (terms) n/a

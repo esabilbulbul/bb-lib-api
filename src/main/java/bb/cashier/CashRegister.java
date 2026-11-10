@@ -82,7 +82,7 @@ public final class CashRegister
             // FINANCIAL SETTINGS
             //-----------------------------------------------------------------
             ssoMerchantPreferences mrcPrefs = new ssoMerchantPreferences();
-            mrcPrefs = AccountMisc.getAccountSettings(pem, pUserId, pAccId);
+            mrcPrefs = AccountMisc.getAccountSettings(pem, pUserId, pAccId, bResetCache);
             if(mrcPrefs!=null)
             {
                 CRParams.taxSet.isTaxIncludedInPrice = mrcPrefs.isTaxInSalesPrice;
@@ -117,7 +117,7 @@ public final class CashRegister
             {
                 pem.flush();
             }
-            
+
             Query stmt = pem.createNamedQuery("SsUsrPersonnel.getSalesPeople", SsUsrPersonnel.class);
             int index = 1;
             stmt.SetParameter(index++, pAccId          , "ACCOUNT_ID");
@@ -149,7 +149,6 @@ public final class CashRegister
                                                                         boolean             pbResetCache) throws Exception
     {
         ArrayList<ssoCashierPOSMenuItem> menuItems = new ArrayList<ssoCashierPOSMenuItem>();
-
 
         try
         {

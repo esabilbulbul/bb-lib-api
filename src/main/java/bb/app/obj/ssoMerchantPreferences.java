@@ -33,6 +33,7 @@ public class ssoMerchantPreferences
     public String displayName;
     public String isTaxInSalesPrice;
     public String taxRate;
+    public String profitRate;
     public String insDiffRate;//if the payment not advance
     public String isActive;
     public String printerCode;//BROTHER-QL-810W , ARGOX
@@ -43,6 +44,14 @@ public class ssoMerchantPreferences
     public String seperateEStore = "N";//default
     public String showBrandNames = "N";//default
     public String lastSearchEngineUpdate = "";
+    
+    public String balanceSMS        = "0";
+    public String balanceWhatsapp   = "0";
+    public String smsTextHeader     = "";
+    public String phoneNumberSMS    = "";
+    public String phoneNumberWA     = "";
+    public String SMSCancelCode     = "";
+    public String SMSCancelNumber   = "";
     
     public ssoMerchantPreferences()
     {
