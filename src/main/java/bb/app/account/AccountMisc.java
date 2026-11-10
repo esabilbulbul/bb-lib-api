@@ -4517,12 +4517,18 @@ public final class AccountMisc
         }
     }
 
-    public static ssoMerchantPreferences getAccountSettings(EntityManager pem, BigInteger pUserId, BigInteger pAccountId) throws Exception
+    public static ssoMerchantPreferences getAccountSettings(EntityManager pem, 
+                                                            BigInteger    pUserId, 
+                                                            BigInteger    pAccountId,
+                                                            boolean       pbReset) throws Exception
     {
         ssoMerchantPreferences mrcPref = new ssoMerchantPreferences();
 
         try
         {
+            if(pbReset==true)
+                pem.flush();
+            
             //pem.cacheable("P_USR_ID, P_ACC_ID");
             //StoredProcedureQuery SP = pem.createStoredProcedureQuery("SP_MRC_GET_MERCHANT_PREFERENCES");
             Query stmt = pem.createNamedQuery("SsUsrAccounts.getMerchantPreferences", SsUsrAccounts.class);
@@ -4568,7 +4574,9 @@ public final class AccountMisc
                 mrcPref.displayName       = Util.Database.getValString(RowN, "DISPLAY_NAME");
                 mrcPref.isTaxInSalesPrice = Util.Database.getValString(RowN, "IS_TAX_INC_PRICE");
                 mrcPref.taxRate           = Util.Database.getValString(RowN, "TAX_RATE");
+                mrcPref.profitRate        = Util.Database.getValString(RowN, "PROFIT_RATE");
                 mrcPref.insDiffRate       = Util.Database.getValString(RowN, "INS_DIFF_RATE");
+                
                 mrcPref.isActive          = Util.Database.getValString(RowN, "ACTIVATED");
                 mrcPref.printerCode       = Util.Database.getValString(RowN, "PRINTER_CODE");
                 mrcPref.printerName       = Util.Database.getValString(RowN, "PRINTER_NAME");
@@ -4579,6 +4587,14 @@ public final class AccountMisc
                 mrcPref.showBrandNames          = Util.Database.getValString(RowN, "SHOW_BRAND_NAMES_ON_ESTORE");
                 mrcPref.lastSearchEngineUpdate  = Util.Database.getValString(RowN, "LAST_SEARCH_ENGINE_UPDATE");
 
+                mrcPref.balanceSMS           = Util.Database.getValString(RowN, "SMS_BALANCE");
+                mrcPref.balanceWhatsapp      = Util.Database.getValString(RowN, "WA_BALANCE");
+                mrcPref.smsTextHeader        = Util.Database.getValString(RowN, "SMS_TEXT_HEADER");
+                mrcPref.phoneNumberSMS       = Util.Database.getValString(RowN, "PHONE_NUMBER_SMS");
+                mrcPref.phoneNumberWA        = Util.Database.getValString(RowN, "PHONE_NUMBER_WA");
+                mrcPref.SMSCancelCode        = Util.Database.getValString(RowN, "SMS_CANCEL_CODE");
+                mrcPref.SMSCancelNumber      = Util.Database.getValString(RowN, "SMS_CANCEL_NUMBER");
+                
             }
             else
             {
